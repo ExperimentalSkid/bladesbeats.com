@@ -1,0 +1,4 @@
+data/catalog-events.json
+.dev.vars
+.env
+workers/.dev.vars

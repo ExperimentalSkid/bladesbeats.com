@@ -1,0 +1,41 @@
+[
+  {
+    "slug": "expotattoo-estepona-2026",
+    "title": "ExpoTattoo Estepona",
+    "year": 2026,
+    "startDate": "2026-05-22",
+    "endDate": "2026-05-24",
+    "venueName": "Palacio de Exposiciones y Congresos",
+    "city": "Estepona",
+    "region": "Malaga",
+    "country": "ES",
+    "summary": "DJ appearance in Estepona, Andalucía.",
+    "summaryEs": "Aparición DJ en Estepona, Andalucía.",
+    "body": "BladesBeats appeared at ExpoTattoo Estepona 2026, a tattoo convention in Andalucía supporting AVOI and Hospital Materno de Málaga.",
+    "bodyEs": "BladesBeats apareció en ExpoTattoo Estepona 2026, una convención de tatuaje en Andalucía en apoyo a AVOI y el Hospital Materno de Málaga.",
+    "organizer": {
+      "name": "Art-Tattoo Estepona",
+      "url": "https://expotattooestepona.weebly.com/"
+    },
+    "offer": {
+      "url": "https://expotattooestepona.weebly.com/",
+      "price": "5",
+      "priceCurrency": "EUR",
+      "validFrom": "2026-05-22",
+      "availability": "https://schema.org/SoldOut"
+    },
+    "partners": [
+      {
+        "name": "ExpoTattoo Estepona",
+        "url": "https://expotattooestepona.weebly.com/"
+      },
+      {
+        "name": "Estepona Town Hall",
+        "url": "https://ayuntamiento.estepona.es/noticia/19425-los-mejores-tatuadores-del-panorama-nacional-e-internacional-se-daran-cita-en-una-nueva-edicion-de-expotattoo"
+      }
+    ],
+    "cause": "Charity event supporting AVOI and Hospital Materno de Malaga",
+    "causeEs": "Evento solidario en apoyo a AVOI y Hospital Materno de Málaga",
+    "logoImage": "/gigs/expoestepona/expotattoo-estepona-logo-wide.jpg"
+  }
+]
