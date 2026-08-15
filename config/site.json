@@ -1,0 +1,14 @@
+{
+  "siteUrl": "https://bladesbeats.com",
+  "artistName": "BladesBeats",
+  "instagramUrl": "https://www.instagram.com/blades_beats/",
+  "platforms": {
+    "spotify": "https://open.spotify.com/artist/63221ca19GsgTnQISR51xl",
+    "appleMusic": "https://music.apple.com/us/artist/bladesbeats/1729442137",
+    "youtube": "https://youtube.com/@bladesbeats",
+    "mixcloud": "https://www.mixcloud.com/BladesBeats/",
+    "instagram": "https://www.instagram.com/blades_beats/",
+    "tiktok": "https://www.tiktok.com/@bladesbeats"
+  },
+  "featuredReleaseSlugs": []
+}

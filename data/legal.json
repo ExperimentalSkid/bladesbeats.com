@@ -1,7 +1,12 @@
 {
   "tradeName": "BladesBeats",
+  "legalName": "",
+  "legalAddress": "",
+  "taxId": "",
   "website": "https://bladesbeats.com",
-  "contactEmail": "bladesbeats.opossum156@passinbox.com",
+  "contactEmail": "",
+  "contactMethod": "Instagram",
+  "contactUrl": "https://www.instagram.com/blades_beats/",
   "activity": "DJ, music production, artist profile, booking inquiries and collaborations",
   "location": "Sevilla, Spain",
   "hostingProvider": "Hetzner",

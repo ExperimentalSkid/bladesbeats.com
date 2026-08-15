@@ -1,5 +1,0 @@
-TURNSTILE_SECRET_KEY=put_turnstile_secret_here
-RESEND_API_KEY=put_resend_api_key_here
-CONTACT_TO=your_receiving_email@example.com
-RESEND_FROM=BladesBeats <contact@your-verified-domain.example>
-ALLOWED_ORIGIN=https://bladesbeats.com
