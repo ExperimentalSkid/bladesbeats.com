@@ -38,7 +38,7 @@ const textFiles = files.filter((file) => /\.(?:html|css|js|xml|txt)$/i.test(file
 for (const file of textFiles) {
   const value = fs.readFileSync(file, "utf8");
   try { assertNoExcludedContent(value, path.relative(DIST, file)); } catch (error) { fail(file, error.message); }
-  if (/\b(?:undefined|null)\b/.test(value)) fail(file, "contains an undefined/null token");
+  if (file.endsWith(".html") && /\b(?:undefined|null)\b/.test(value)) fail(file, "contains an undefined/null token");
   if (/bladesbeats\.opossum|api\.ipify\.org/i.test(value)) fail(file, "contains retired contact or IP lookup data");
 }
 

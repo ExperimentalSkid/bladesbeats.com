@@ -512,7 +512,7 @@ function build() {
   for (const entry of fs.readdirSync(DIST)) {
     fs.rmSync(path.join(DIST, entry), { recursive: true, force: true });
   }
-  write("index.html", buildHome("en", releases, sets, gigs));
+  write("index.html", fs.readFileSync(path.join(ROOT, "index.html"), "utf8"));
   write(path.join("es", "index.html"), buildHome("es", releases, sets, gigs));
   write(path.join("music", "index.html"), buildMusicIndex("en", releases));
   write(path.join("es", "musica", "index.html"), buildMusicIndex("es", releases));
@@ -559,6 +559,7 @@ function build() {
   write("sitemap.xml", buildSitemap(sitemapPairs));
   copy("src/site.css", "assets/css/site.css");
   copy("src/site.js", "assets/js/site.js");
+  copy("assets/js/catalog-hero.js");
   copy("assets/css/tokens.css");
   ["favicon.ico", "favicon-16.png", "favicon-32.png", "favicon-48.png", "apple-touch-icon.png", "og-card.png", "bladesbeats.webp"].forEach((file) => copy(file));
   copy("gigs/expoestepona/expotattoo-estepona-logo-wide.jpg");

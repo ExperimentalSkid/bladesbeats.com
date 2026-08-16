@@ -80,7 +80,7 @@ async function main() {
     const preview = await fetch(`${origin}${prepared.previewPath}`, { headers: { cookie } });
     assert.equal(preview.status, 200);
     const previewHtml = await preview.text();
-    assert.ok(previewHtml.includes(`${prepared.previewPath}assets/css/site.css`));
+    assert.ok(previewHtml.includes(`${prepared.previewPath}assets/js/catalog-hero.js`));
     const manifest = await fetch(`${origin}${prepared.previewPath}release-manifest.json`, { headers: { cookie } });
     assert.equal(manifest.status, 404);
 
