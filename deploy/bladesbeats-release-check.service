@@ -1,5 +1,5 @@
 [Unit]
-Description=BladesBeats weekly release source check
+Description=BladesBeats daily release source check
 After=network-online.target
 Wants=network-online.target
 

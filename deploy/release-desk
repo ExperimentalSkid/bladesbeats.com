@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 077
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run release-desk as root so the temporary firewall rule can be opened and removed." >&2
@@ -12,7 +13,7 @@ RELEASES_DIR="${BLADESBEATS_RELEASES_DIR:-/srv/bladesbeats/releases}"
 DATA_DIR="${RELEASE_DESK_DATA_DIR:-/var/lib/bladesbeats/release-desk}"
 DESK_USER="${RELEASE_DESK_USER:-bladesbeats-desk}"
 NODE_BIN="${RELEASE_DESK_NODE:-$(command -v node || true)}"
-PUBLIC_IP="${BLADESBEATS_PUBLIC_IP:-$(hostname -I | awk '{print $1}')}"
+PUBLIC_IP="${BLADESBEATS_PUBLIC_IP:-$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}')}"
 
 [[ -x "${NODE_BIN}" ]] || { echo "Node.js is not installed." >&2; exit 1; }
 [[ -f "${SOURCE_DIR}/release-desk/server.js" ]] || { echo "Release Desk source was not found at ${SOURCE_DIR}." >&2; exit 1; }
@@ -20,12 +21,13 @@ PUBLIC_IP="${BLADESBEATS_PUBLIC_IP:-$(hostname -I | awk '{print $1}')}"
 [[ "${PUBLIC_IP}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$|: ]] || { echo "Set BLADESBEATS_PUBLIC_IP to the public VPS address." >&2; exit 1; }
 id "${DESK_USER}" >/dev/null 2>&1 || { echo "Service account ${DESK_USER} does not exist." >&2; exit 1; }
 
-for _ in {1..100}; do
-  PORT="$(shuf -i 30000-59999 -n 1)"
-  if ! ss -H -ltn "sport = :${PORT}" | grep -q .; then break; fi
-done
+PORT="${RELEASE_DESK_PUBLIC_PORT:-43827}"
+if ! [[ "${PORT}" =~ ^[0-9]+$ ]] || (( PORT < 1024 || PORT > 65535 )); then
+  echo "RELEASE_DESK_PUBLIC_PORT must be between 1024 and 65535." >&2
+  exit 1
+fi
 if ss -H -ltn "sport = :${PORT}" | grep -q .; then
-  echo "Could not allocate a temporary port." >&2
+  echo "Temporary panel port ${PORT} is already in use." >&2
   exit 1
 fi
 
@@ -38,7 +40,9 @@ fi
 
 RUNTIME_DIR="$(mktemp -d /run/bladesbeats-release-desk.XXXXXX)"
 case "$(readlink -f "${RUNTIME_DIR}")" in /run/bladesbeats-release-desk.*) ;; *) echo "Unsafe runtime directory." >&2; exit 1;; esac
-TOKEN="$(openssl rand -hex 32)"
+chown "${DESK_USER}:${DESK_USER}" "${RUNTIME_DIR}"
+chmod 0700 "${RUNTIME_DIR}"
+TOKEN="$(openssl rand -base64 24 | tr '+/' '-_' | tr -d '=\n')"
 install -o "${DESK_USER}" -g "${DESK_USER}" -m 0600 /dev/null "${RUNTIME_DIR}/token"
 printf '%s' "${TOKEN}" > "${RUNTIME_DIR}/token"
 install -o "${DESK_USER}" -g "${DESK_USER}" -m 0600 "${CERT_DIR}/fullchain.pem" "${RUNTIME_DIR}/fullchain.pem"
@@ -68,12 +72,14 @@ else
 fi
 
 echo
-echo "Temporary Release Desk URL:"
+echo "Temporary Release Desk"
 URL_HOST="${PUBLIC_IP}"
 if [[ "${PUBLIC_IP}" == *:* ]]; then URL_HOST="[${PUBLIC_IP}]"; fi
-echo "https://${URL_HOST}:${PORT}/#token=${TOKEN}"
+echo "URL:      https://${URL_HOST}:${PORT}/"
+echo "Password: ${TOKEN}"
+echo "Expires:  10 minutes to log in · 20 minutes idle · 2 hours maximum"
 echo
-echo "The one-time link expires in 10 minutes. Ctrl+C closes the panel and firewall port."
+echo "Press Ctrl+C to close the panel and firewall port immediately."
 
 runuser -u "${DESK_USER}" -- env \
   BLADESBEATS_SOURCE="${SOURCE_DIR}" \

@@ -28,7 +28,7 @@ npm run catalog:check
 - `config/site.json`: public profile destinations and homepage feature pins.
 - `src/`: public CSS and JavaScript source.
 - `scripts/build-launch.js`: clean public-site generator.
-- `scripts/check-releases.js`: weekly official-source checker.
+- `scripts/check-releases.js`: daily official-source checker with credential-free Apple Music, YouTube and Mixcloud support.
 - `release-desk/`: temporary authenticated review, preview, publish and rollback panel.
 - `deploy/`: reviewed VPS launcher, constrained publish helper, Nginx reference and systemd timer.
 - `dist/`: generated public output; never use the repository root as the Nginx document root.

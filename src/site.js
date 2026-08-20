@@ -47,7 +47,8 @@
     const buttons = Array.from(catalog.querySelectorAll("[data-catalog-filter]"));
     const params = new URLSearchParams(location.search);
     let activeType = params.get("type") || "all";
-    if (!buttons.some(function (button) { return button.dataset.catalogFilter === activeType; })) activeType = "all";
+    const supportedTypes = ["all", "original", "instrumental", "remix", "edit"];
+    if (buttons.length ? !buttons.some(function (button) { return button.dataset.catalogFilter === activeType; }) : !supportedTypes.includes(activeType)) activeType = "all";
 
     function applyCatalog() {
       const query = (search && search.value || "").trim().toLocaleLowerCase();
@@ -61,6 +62,9 @@
       const direction = sort && sort.value === "oldest" ? 1 : -1;
       visible.sort(function (a, b) { return direction * String(a.dataset.date).localeCompare(String(b.dataset.date)); });
       visible.forEach(function (card) { card.parentElement.appendChild(card); });
+      catalog.querySelectorAll("[data-catalog-group]").forEach(function (group) {
+        group.hidden = !group.querySelector("[data-catalog-card]:not([hidden])");
+      });
       buttons.forEach(function (button) { button.setAttribute("aria-pressed", String(button.dataset.catalogFilter === activeType)); });
       if (count) count.textContent = String(visible.length);
       if (empty) empty.hidden = visible.length !== 0;

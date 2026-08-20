@@ -14,6 +14,13 @@ h2{margin:0;font-size:clamp(30px,4vw,48px);letter-spacing:-.045em}
 .session strong{color:var(--cyan)}
 .session span,.toolbar p,.feature-panel p,.publish-panel p{color:var(--muted)}
 .notice{margin-top:28px;padding:18px;border:1px solid var(--line);background:var(--panel)}
+.login-panel{padding:clamp(24px,5vw,48px)}
+.login-panel form{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,.55fr) auto;gap:20px;align-items:end}
+.login-panel h2{font-size:clamp(28px,4vw,44px)}
+.login-panel p:not(.eyebrow){margin:10px 0 0;color:var(--muted)}
+.login-panel label{display:grid;gap:8px;color:var(--muted);font:700 9px ui-monospace,monospace;letter-spacing:.11em;text-transform:uppercase}
+.login-panel input{width:100%;min-height:48px;padding:0 12px;border:1px solid var(--line);border-radius:0;background:var(--bg);color:var(--text)}
+.login-status{grid-column:1/-1;min-height:1.4em;margin:0!important}
 .toolbar,.feature-panel,.publish-panel,.versions{display:grid;grid-template-columns:1fr auto;gap:30px;align-items:end;margin-top:54px;padding:28px;border:1px solid var(--line);background:rgba(16,20,37,.75)}
 .button{display:inline-flex;min-height:48px;align-items:center;justify-content:center;padding:0 18px;border:1px solid var(--line);border-radius:0;background:transparent;color:var(--text);font:700 11px ui-monospace,monospace;letter-spacing:.1em;text-decoration:none;text-transform:uppercase;cursor:pointer}
 .button:hover{border-color:var(--cyan)}
@@ -67,4 +74,5 @@ h2{margin:0;font-size:clamp(30px,4vw,48px);letter-spacing:-.045em}
 .rollback-controls input{min-height:40px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 10px}
 .status-error{color:var(--red)!important}
 .status-ok{color:var(--cyan)!important}
+@media(max-width:900px){.login-panel form{grid-template-columns:1fr}.login-status{grid-column:1}}
 @media(max-width:760px){.shell{width:min(100% - 20px,1280px);padding-top:24px}.masthead,.toolbar,.feature-panel,.publish-panel,.versions{grid-template-columns:1fr;align-items:start}.feature-list{grid-column:1}.feature-picker{display:grid}.feature-picker select{min-width:0;width:100%}.feature-row{grid-template-columns:28px 1fr}.feature-actions{grid-column:2;flex-wrap:wrap}.session{text-align:left}.candidate-grid{grid-template-columns:1fr}.candidate figure{max-width:260px}.field-row{grid-template-columns:1fr}.candidate>footer span{width:100%;margin:5px 0 0}.rollback-controls{display:grid}}

@@ -174,11 +174,11 @@ function htmlDocument({ lang, title, description, canonical, alternates, active,
 </html>`;
 }
 
-function releaseCards(releases, lang) {
+function releaseCards(releases, lang, eagerCount = 0) {
   return releases.map((release, index) => {
     const title = displayReleaseTitle(release);
     return `<article class="release-card">
-      <a class="release-art" href="${detailPath(release, lang)}"><img src="${escapeAttr(imageUrl(release.image, 480))}" alt="${escapeAttr(title)} artwork" width="480" height="480" loading="${index < 4 ? "eager" : "lazy"}" decoding="async"><span class="release-index">${String(index + 1).padStart(2, "0")}</span></a>
+      <a class="release-art" href="${detailPath(release, lang)}"><img src="${escapeAttr(imageUrl(release.image, 480))}" alt="${escapeAttr(title)} artwork" width="480" height="480" loading="${index < eagerCount ? "eager" : "lazy"}" decoding="async"><span class="release-index">${String(index + 1).padStart(2, "0")}</span></a>
       <div class="release-info"><p class="release-type">${typeLabel(release.type, lang)}</p><h3 class="release-name"><a href="${detailPath(release, lang)}">${escapeHtml(title)}</a></h3><p class="release-date">${escapeHtml(formatDate(releaseDate(release), lang))}</p></div>
     </article>`;
   }).join("");
@@ -240,6 +240,41 @@ function buildHome(lang, releases, sets, gigs) {
   });
 }
 
+function buildFocusedHome(lang, releases, sets) {
+  const es = lang === "es";
+  const music = releases.filter((item) => typeKey(item.type) !== "dj-set");
+  const originals = music.filter((item) => ["original", "instrumental"].includes(typeKey(item.type)));
+  const reworks = music.filter((item) => ["remix", "edit"].includes(typeKey(item.type)));
+  const pinned = config.featuredReleaseSlugs.map((slug) => originals.find((item) => item.slug === slug)).filter(Boolean);
+  const featuredOriginals = [...pinned, ...originals.filter((item) => !pinned.includes(item))].slice(0, 4);
+  const newest = music[0];
+  const latestSet = sets[0];
+  const preferred = preferredLink(newest);
+  const schema = {
+    "@context": "https://schema.org", "@type": "Person", "@id": `${SITE}/#artist`, name: "BladesBeats", url: es ? `${SITE}/es/` : `${SITE}/`, image: `${SITE}/bladesbeats.webp`, jobTitle: es ? "DJ y productor musical" : "DJ and music producer", address: { "@type": "PostalAddress", addressLocality: "Sevilla", addressCountry: "ES" }, sameAs: Object.values(config.platforms)
+  };
+  const body = `<section class="hero" aria-labelledby="hero-title">
+    <div class="hero-copy"><p class="eyebrow">Oslo · Sevilla · 2017—${new Date().getFullYear()}</p><h1 id="hero-title"><span>Blades</span><span>Beats<b>.</b></span></h1>
+      <p class="hero-lead">${es ? "DJ y productor en Sevilla, con raíces en Oslo. Música original, remixes y sesiones creadas para el movimiento." : "DJ and producer in Sevilla, with Oslo roots. Original music, remixes and sets built for movement."}</p>
+      <div class="hero-actions"><a class="button primary" href="${detailPath(newest, lang)}">${es ? "Último lanzamiento" : "Latest release"} →</a><a class="button" href="${es ? "/es/musica/" : "/music/"}">${es ? "Explorar música" : "Explore music"}</a></div>
+    </div>
+    <div class="hero-stage"><img class="hero-portrait" src="/bladesbeats.webp" alt="${es ? "BladesBeats, DJ y productor en Sevilla" : "BladesBeats, DJ and producer in Sevilla"}" width="1200" height="800" loading="eager" fetchpriority="high" decoding="async">
+      <article class="now-playing"><p class="now-playing-label">${es ? "Ahora · último lanzamiento" : "Now · latest release"}</p><h2>${escapeHtml(displayReleaseTitle(newest))}</h2><p class="now-playing-meta"><span>${typeLabel(newest.type, lang)}</span><span>${formatDate(releaseDate(newest), lang)}</span></p><a href="${escapeAttr(preferred[1])}"${preferred[1].startsWith("http") ? ' target="_blank" rel="noopener noreferrer"' : ""}>${es ? "Abrir en" : "Open on"} ${escapeHtml(preferred[0])} ↗</a></article>
+    </div>
+  </section>
+  <section class="section" aria-labelledby="official-title"><div class="site-frame"><div class="section-head"><div><p class="section-kicker">01 · ${es ? "Lanzamientos" : "Releases"}</p><h2 class="section-title" id="official-title">${es ? "Música original" : "Original music"}</h2></div><p class="section-intro">${es ? "Singles e instrumentales de BladesBeats, con destinos directos y verificados para escuchar." : "BladesBeats singles and instrumentals, with direct verified places to listen."}</p></div><div class="release-rail">${releaseCards(featuredOriginals, lang)}</div><div class="section-action"><a class="button text" href="${es ? "/es/musica/" : "/music/"}#official">${es ? "Ver lanzamientos" : "View releases"} →</a></div></div></section>
+  <section class="section section-remixes" aria-labelledby="remixes-title"><div class="site-frame"><div class="section-head"><div><p class="section-kicker">02 · ${es ? "Reinterpretaciones" : "Reworks"}</p><h2 class="section-title" id="remixes-title">${es ? "Remixes y edits" : "Remixes & edits"}</h2></div><p class="section-intro">${es ? "Versiones de club claramente separadas del catálogo original." : "Club-focused versions kept clearly separate from the original catalogue."}</p></div><div class="release-rail">${releaseCards(reworks.slice(0, 4), lang)}</div><div class="section-action"><a class="button text" href="${es ? "/es/musica/" : "/music/"}#remixes">${es ? "Ver remixes y edits" : "View remixes & edits"} →</a></div></div></section>
+  ${latestSet ? `<section class="section" aria-labelledby="set-title"><div class="site-frame"><div class="section-head"><div><p class="section-kicker">03 · ${es ? "Sesiones DJ" : "DJ sets"}</p><h2 class="section-title" id="set-title">${es ? "Más allá del single" : "Beyond the single"}</h2></div><p class="section-intro">${es ? "Mezclas largas, energía de sala y selección sin recortar, en su propio espacio." : "Long-form blends, room energy and uncut selection, in a space of their own."}</p></div></div><div class="set-feature"><a class="set-art" href="${setPath(latestSet, lang)}"><img src="${escapeAttr(imageUrl(latestSet.image, 900))}" alt="${escapeAttr(latestSet.title)} artwork" width="900" height="900" loading="lazy" decoding="async"></a><div class="set-copy"><p class="set-meta">Mixcloud · ${formatDate(releaseDate(latestSet), lang)}${latestSet.duration ? ` · ${escapeHtml(latestSet.duration)}` : ""}</p><h3>${escapeHtml(latestSet.title)}</h3><p class="set-description">${escapeHtml(es ? "Sesión oficial de BladesBeats publicada en Mixcloud." : (latestSet.description || "Official BladesBeats session on Mixcloud."))}</p><div class="set-actions"><a class="button primary" href="${setPath(latestSet, lang)}">${es ? "Abrir sesión" : "Open set"} →</a><a class="button" href="${es ? "/es/sesiones/" : "/dj-sets/"}">${es ? "Todas las sesiones" : "All sets"}</a></div></div></div></section>` : ""}
+  <section class="follow"><div class="site-frame follow-inner"><h2>${es ? "Escucha. Sigue. Vuelve." : "Listen. Follow. Return."}</h2><div class="follow-links">${Object.entries(config.platforms).map(([key, url]) => `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer"><span>${escapeHtml(platformName(key))}</span><span>↗</span></a>`).join("")}</div></div></section>
+  <section class="contact-band"><div class="site-frame contact-band-inner"><div><p class="section-kicker">04 · ${es ? "Contacto" : "Contact"}</p><h2>${es ? "Hablemos del próximo <span>set.</span>" : "Let’s talk about the next <span>set.</span>"}</h2></div><a class="button" href="${es ? "/es/contratar-dj-sevilla/" : "/booking/"}">${es ? "Booking y colaboración" : "Booking & collaboration"} →</a></div></section>`;
+  return htmlDocument({
+    lang,
+    title: es ? "BladesBeats | DJ y productor en Sevilla" : "BladesBeats | DJ and Producer in Sevilla",
+    description: es ? "Sitio oficial de BladesBeats: música original, remixes, sesiones DJ y bolos." : "Official BladesBeats site: original music, remixes, DJ sets and gigs.",
+    canonical: es ? `${SITE}/es/` : `${SITE}/`, alternates: { en: `${SITE}/`, es: `${SITE}/es/` }, active: "home", body, schema
+  });
+}
+
 function pageHero(lang, kicker, title, intro) {
   return `<section class="page-hero"><div class="site-frame page-hero-grid"><div><p class="section-kicker">${escapeHtml(kicker)}</p><h1>${escapeHtml(title)}</h1></div><p class="page-hero-copy">${escapeHtml(intro)}</p></div></section>`;
 }
@@ -276,21 +311,24 @@ function buildMusicIndex(lang, releases) {
   const es = lang === "es";
   const canonical = es ? `${SITE}/es/musica/` : `${SITE}/music/`;
   const title = es ? "Música | BladesBeats" : "Music | BladesBeats";
-  const description = es ? "Catálogo completo de BladesBeats: originales, remixes, edits, instrumentales y sesiones DJ con enlaces verificados." : "The complete BladesBeats catalogue: originals, remixes, edits, instrumentals and DJ sets with verified listening links.";
-  const filterLabels = es ? { all: "Todo", original: "Originales", remix: "Remixes", edit: "Edits", instrumental: "Instrumentales", "dj-set": "Sesiones DJ" } : { all: "All", original: "Originals", remix: "Remixes", edit: "Edits", instrumental: "Instrumentals", "dj-set": "DJ sets" };
-  const body = `${pageHero(lang, es ? "Catálogo oficial" : "Official catalogue", es ? "Música" : "Music", es ? "Todo el catálogo, directamente visible. Filtra por categoría y abre solo enlaces de plataforma verificados." : "The entire catalogue, immediately visible. Filter by category and open only verified platform destinations.")}
+  const music = releases.filter((item) => typeKey(item.type) !== "dj-set");
+  const groups = [
+    { id: "official", title: es ? "Lanzamientos originales" : "Original releases", intro: es ? "Singles, producciones propias e instrumentales." : "Singles, artist-led productions and instrumentals.", items: music.filter((item) => ["original", "instrumental"].includes(typeKey(item.type))) },
+    { id: "remixes", title: es ? "Remixes y edits" : "Remixes & edits", intro: es ? "Reinterpretaciones y versiones de club, separadas del catálogo original." : "Reworks and club versions, separate from the original catalogue.", items: music.filter((item) => ["remix", "edit"].includes(typeKey(item.type))) }
+  ].filter((group) => group.items.length);
+  const description = es ? "Catálogo de BladesBeats con lanzamientos originales y remixes claramente separados, y enlaces verificados." : "The BladesBeats catalogue with original releases and remixes clearly separated, plus verified listening links.";
+  const body = `${pageHero(lang, es ? "Catálogo oficial" : "Official catalogue", es ? "Música" : "Music", es ? "Lanzamientos originales y reinterpretaciones, organizados sin mezclar las sesiones DJ." : "Original releases and reworks, organised without mixing in the DJ sets.")}
   ${profileStrip()}
   <section class="catalog-section"><div class="site-frame" data-catalog>
     <div class="catalog-toolbar">
       <label class="control-label">${es ? "Buscar" : "Search"}<input class="catalog-search" type="search" placeholder="${es ? "Título o artista" : "Title or artist"}" autocomplete="off" data-catalog-search></label>
-      <div class="control-label"><span>${es ? "Categoría" : "Category"}</span><div class="filter-list">${Object.entries(filterLabels).map(([key, label]) => `<button class="filter-button" type="button" data-catalog-filter="${key}" aria-pressed="${key === "all"}">${label}</button>`).join("")}</div></div>
       <label class="control-label">${es ? "Orden" : "Order"}<select class="catalog-sort" data-catalog-sort><option value="newest">${es ? "Más reciente" : "Newest first"}</option><option value="oldest">${es ? "Más antiguo" : "Oldest first"}</option></select></label>
     </div>
-    <p class="catalog-status"><span><b data-catalog-count>${releases.length}</b> ${es ? "resultados" : "results"}</span><span>${es ? "Enlaces directos verificados" : "Verified direct links"}</span></p>
-    <div class="catalog-grid">${catalogCards(releases, lang)}</div>
+    <p class="catalog-status"><span><b data-catalog-count>${music.length}</b> ${es ? "resultados" : "results"}</span><span><a href="${es ? "/es/sesiones/" : "/dj-sets/"}">${es ? "Las sesiones DJ están aquí" : "DJ sets live here"} →</a></span></p>
+    ${groups.map((group, index) => `<section class="catalog-group" id="${group.id}" data-catalog-group><div class="catalog-group-head"><div><p class="section-kicker">0${index + 1}</p><h2>${group.title}</h2></div><p>${group.intro}</p></div><div class="catalog-grid">${catalogCards(group.items, lang)}</div></section>`).join("")}
     <p class="catalog-empty" data-catalog-empty hidden>${es ? "No hay resultados para esta búsqueda." : "No releases match this search."}</p>
   </div></section>`;
-  const schema = { "@context": "https://schema.org", "@type": "ItemList", name: es ? "Catálogo de BladesBeats" : "BladesBeats catalogue", numberOfItems: releases.length, itemListElement: releases.map((release, index) => ({ "@type": "ListItem", position: index + 1, url: `${SITE}${detailPath(release, lang)}`, name: displayReleaseTitle(release) })) };
+  const schema = { "@context": "https://schema.org", "@type": "ItemList", name: es ? "Catálogo de BladesBeats" : "BladesBeats catalogue", numberOfItems: music.length, itemListElement: music.map((release, index) => ({ "@type": "ListItem", position: index + 1, url: `${SITE}${detailPath(release, lang)}`, name: displayReleaseTitle(release) })) };
   return htmlDocument({ lang, title, description, canonical, alternates: { en: `${SITE}/music/`, es: `${SITE}/es/musica/` }, active: "music", body, schema });
 }
 
@@ -301,6 +339,7 @@ function youtubeEmbed(release) {
 
 function buildReleasePage(release, releases, lang = "en") {
   const es = lang === "es";
+  const isSet = typeKey(release.type) === "dj-set";
   const title = displayReleaseTitle(release);
   const canonical = `${SITE}${detailPath(release, lang)}`;
   const links = directLinks(release);
@@ -308,8 +347,8 @@ function buildReleasePage(release, releases, lang = "en") {
   const related = releases.filter((item) => item.slug !== release.slug && typeKey(item.type) === typeKey(release.type)).slice(0, 3);
   const description = es ? `${title}: lanzamiento oficial de BladesBeats con enlaces verificados para escuchar o ver.`.slice(0, 158) : `${title}: official BladesBeats release page with verified destinations to listen or watch.`.slice(0, 158);
   const copy = release.longDescription || release.description || (es ? "Lanzamiento oficial de BladesBeats." : "Official BladesBeats release.");
-  const body = `<section class="detail"><div class="site-frame"><nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="${es ? "/es/" : "/"}">BladesBeats</a></li><li><a href="${es ? "/es/musica/" : "/music/"}">${es ? "Música" : "Music"}</a></li><li aria-current="page">${escapeHtml(title)}</li></ol></nav>
-    <article class="detail-grid"><figure class="detail-cover"><img src="${escapeAttr(imageUrl(release.image, 1000))}" alt="${escapeAttr(title)} artwork" width="1000" height="1000" decoding="async"></figure><div class="detail-copy"><p class="section-kicker">${escapeHtml(typeLabel(release.type, lang))}</p><h1${title.length > 58 ? ' class="long-title"' : ""}>${escapeHtml(title)}</h1><p class="detail-meta">${formatDate(releaseDate(release), lang)} · BladesBeats</p><p class="detail-description">${escapeHtml(copy)}</p><div class="detail-actions">${platformButtons(links, lang)}</div>
+  const body = `<section class="detail"><div class="site-frame"><nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="${es ? "/es/" : "/"}">BladesBeats</a></li><li><a href="${isSet ? (es ? "/es/sesiones/" : "/dj-sets/") : (es ? "/es/musica/" : "/music/")}">${isSet ? (es ? "Sesiones" : "DJ sets") : (es ? "Música" : "Music")}</a></li><li aria-current="page">${escapeHtml(title)}</li></ol></nav>
+    <article class="detail-grid"><figure class="detail-cover"><img src="${escapeAttr(imageUrl(release.image, 1000))}" alt="${escapeAttr(title)} artwork" width="1000" height="1000" loading="eager" fetchpriority="high" decoding="async"></figure><div class="detail-copy"><p class="section-kicker">${escapeHtml(typeLabel(release.type, lang))}</p><h1${title.length > 58 ? ' class="long-title"' : ""}>${escapeHtml(title)}</h1><p class="detail-meta">${formatDate(releaseDate(release), lang)} · BladesBeats</p><p class="detail-description">${escapeHtml(copy)}</p><div class="detail-actions">${platformButtons(links, lang)}</div>
       ${player ? `<div class="player-shell" data-player-shell data-player-source="${escapeAttr(player)}" data-player-title="${escapeAttr(title)}" data-player-type="video"><div class="player-placeholder"><div><p>${es ? "El reproductor de YouTube se carga solo cuando lo solicitas." : "The YouTube player loads only when you choose to play it."}</p><button class="button" type="button" data-load-player>${es ? "Cargar reproductor" : "Load player"}</button></div></div></div>` : ""}
     </div></article></div></section>
     ${related.length ? `<section class="related"><div class="site-frame"><div class="related-head"><h2>${es ? "Más de esta categoría" : "More in this category"}</h2><a class="button text" href="${es ? "/es/musica/" : "/music/"}?type=${typeKey(release.type)}">${es ? "Ver categoría" : "View category"} →</a></div><div class="related-grid">${releaseCards(related, lang)}</div></div></section>` : ""}`;
@@ -322,15 +361,18 @@ function setCard(set, lang = "en") {
   return `<article class="release-card"><a class="release-art" href="${setPath(set, lang)}"><img src="${escapeAttr(imageUrl(set.image, 700))}" alt="${escapeAttr(set.title)} artwork" width="700" height="700" loading="lazy" decoding="async"></a><div class="release-info"><p class="release-type">Mixcloud · ${escapeHtml(set.duration || (es ? "Sesión DJ" : "DJ set"))}</p><h2 class="release-name"><a href="${setPath(set, lang)}">${escapeHtml(set.title)}</a></h2><p class="release-date">${formatDate(releaseDate(set), lang)}</p></div></article>`;
 }
 
-function buildSetIndex(lang, sets) {
+function buildSetIndex(lang, sets, releases = []) {
   const es = lang === "es";
   const featured = sets[0];
   const rest = sets.slice(1);
+  const videoSets = releases.filter((item) => typeKey(item.type) === "dj-set");
   const canonical = es ? `${SITE}/es/sesiones/` : `${SITE}/dj-sets/`;
   const body = `${pageHero(lang, "Mixcloud", es ? "Sesiones DJ" : "DJ sets", es ? "Mezclas largas, selección de club y sesiones oficiales de BladesBeats. Mixcloud es la fuente principal." : "Long-form mixes, club selection and official BladesBeats sessions. Mixcloud is the authoritative source.")}
   ${featured ? `<section class="sets-lead"><div class="site-frame"><div class="sets-feature"><a class="sets-feature-art" href="${setPath(featured, lang)}"><img src="${escapeAttr(imageUrl(featured.image, 1000))}" alt="${escapeAttr(featured.title)} artwork" width="1000" height="1000" decoding="async"></a><div class="sets-feature-copy"><p class="section-kicker">${es ? "Última sesión" : "Latest session"}</p><h2>${escapeHtml(featured.title)}</h2><p class="detail-description">${escapeHtml(es ? "Sesión oficial de BladesBeats publicada en Mixcloud." : (featured.description || "Official BladesBeats session on Mixcloud."))}</p><p class="detail-meta">${formatDate(releaseDate(featured), lang)}${featured.duration ? ` · ${escapeHtml(featured.duration)}` : ""}</p><div class="detail-actions"><a class="button primary" href="${setPath(featured, lang)}">${es ? "Abrir sesión" : "Open set"} →</a><a class="button" href="${escapeAttr(featured.links?.mixcloud || config.platforms.mixcloud)}" target="_blank" rel="noopener noreferrer">Mixcloud ↗</a></div></div></div></div></section>` : ""}
-  ${rest.length ? `<section class="sets-archive"><div class="site-frame"><div class="section-head"><div><p class="section-kicker">${es ? "Archivo" : "Archive"}</p><h2 class="section-title">${es ? "Más sesiones" : "More sessions"}</h2></div><p class="section-intro">${es ? "Cada sesión mantiene su portada, fecha, duración y enlace directo a Mixcloud." : "Every session keeps its artwork, date, duration and direct Mixcloud destination."}</p></div><div class="sets-grid">${rest.map((set) => setCard(set, lang)).join("")}</div></div></section>` : ""}`;
-  const schema = { "@context": "https://schema.org", "@type": "ItemList", name: es ? "Sesiones DJ de BladesBeats" : "BladesBeats DJ sets", itemListElement: sets.map((set, index) => ({ "@type": "ListItem", position: index + 1, name: set.title, url: `${SITE}${setPath(set, lang)}` })) };
+  ${rest.length ? `<section class="sets-archive"><div class="site-frame"><div class="section-head"><div><p class="section-kicker">${es ? "Archivo" : "Archive"}</p><h2 class="section-title">${es ? "Más sesiones" : "More sessions"}</h2></div><p class="section-intro">${es ? "Cada sesión mantiene su portada, fecha, duración y enlace directo a Mixcloud." : "Every session keeps its artwork, date, duration and direct Mixcloud destination."}</p></div><div class="sets-grid">${rest.map((set) => setCard(set, lang)).join("")}</div></div></section>` : ""}
+  ${videoSets.length ? `<section class="sets-archive sets-video"><div class="site-frame"><div class="section-head"><div><p class="section-kicker">YouTube</p><h2 class="section-title">${es ? "Sesiones en vídeo" : "Video sets"}</h2></div><p class="section-intro">${es ? "Sesiones completas publicadas en el canal oficial de BladesBeats." : "Full-length sets published on the official BladesBeats channel."}</p></div><div class="sets-grid">${releaseCards(videoSets, lang)}</div></div></section>` : ""}`;
+  const allSetItems = [...sets.map((set) => ({ name: set.title, url: `${SITE}${setPath(set, lang)}` })), ...videoSets.map((set) => ({ name: displayReleaseTitle(set), url: `${SITE}${detailPath(set, lang)}` }))];
+  const schema = { "@context": "https://schema.org", "@type": "ItemList", name: es ? "Sesiones DJ de BladesBeats" : "BladesBeats DJ sets", itemListElement: allSetItems.map((set, index) => ({ "@type": "ListItem", position: index + 1, name: set.name, url: set.url })) };
   return htmlDocument({ lang, title: es ? "Sesiones DJ | BladesBeats" : "DJ Sets | BladesBeats", description: es ? "Sesiones DJ oficiales de BladesBeats en Mixcloud." : "Official BladesBeats DJ sets and Mixcloud sessions.", canonical, alternates: { en: `${SITE}/dj-sets/`, es: `${SITE}/es/sesiones/` }, active: "sets", body, schema });
 }
 
@@ -512,16 +554,16 @@ function build() {
   for (const entry of fs.readdirSync(DIST)) {
     fs.rmSync(path.join(DIST, entry), { recursive: true, force: true });
   }
-  write("index.html", fs.readFileSync(path.join(ROOT, "index.html"), "utf8"));
-  write(path.join("es", "index.html"), buildHome("es", releases, sets, gigs));
+  write("index.html", buildFocusedHome("en", releases, sets));
+  write(path.join("es", "index.html"), buildFocusedHome("es", releases, sets));
   write(path.join("music", "index.html"), buildMusicIndex("en", releases));
   write(path.join("es", "musica", "index.html"), buildMusicIndex("es", releases));
   for (const release of releases) {
     write(path.join("music", release.slug, "index.html"), buildReleasePage(release, releases, "en"));
     write(path.join("es", "musica", release.slug, "index.html"), buildReleasePage(release, releases, "es"));
   }
-  write(path.join("dj-sets", "index.html"), buildSetIndex("en", sets));
-  write(path.join("es", "sesiones", "index.html"), buildSetIndex("es", sets));
+  write(path.join("dj-sets", "index.html"), buildSetIndex("en", sets, releases));
+  write(path.join("es", "sesiones", "index.html"), buildSetIndex("es", sets, releases));
   for (const set of sets) {
     write(path.join("dj-sets", set.slug, "index.html"), buildSetPage(set, sets, "en"));
     write(path.join("es", "sesiones", set.slug, "index.html"), buildSetPage(set, sets, "es"));

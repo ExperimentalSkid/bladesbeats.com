@@ -1,6 +1,6 @@
 # BladesBeats VPS operations
 
-This runbook preserves the required workflow: SSH in, run one command, receive a temporary HTTPS URL on a randomized port, review a private draft, explicitly publish if correct, and press Ctrl+C to remove the panel and firewall rule.
+This runbook preserves the required workflow: SSH in, run one command, receive a temporary HTTPS URL and random one-time password, review a private draft, explicitly publish if correct, and press Ctrl+C to remove the panel and host-firewall rule.
 
 ## Before the first server change
 
@@ -12,11 +12,11 @@ Required server components:
 - Nginx
 - Git
 - OpenSSL
-- Certbot with short-lived IP certificate support
+- Certbot 5.4 or newer, with short-lived IP certificate support
 - `ufw` or `iptables`
 - a checked-out copy of this private repository at `/srv/bladesbeats/source`
 
-If a Hetzner Cloud Firewall filters inbound traffic, it must permit the selected temporary panel port. The launcher only opens and closes the VPS host-firewall rule; it cannot change a separate Hetzner firewall without Hetzner API credentials.
+If a Hetzner Cloud Firewall filters inbound traffic, permit TCP port `43827` there. That network rule can remain in place: the launcher still opens the VPS host-firewall rule only while the panel runs and removes it on shutdown. Override the port with `RELEASE_DESK_PUBLIC_PORT` only if the same port is allowed in the Hetzner firewall.
 
 ## Install the tools without changing the live site
 
@@ -27,7 +27,7 @@ cd /srv/bladesbeats/source
 bash deploy/install-release-tools.sh
 ```
 
-The installer creates the unprivileged `bladesbeats-desk` service account, private state directories, the constrained root publish helper and the weekly source-check timer. It validates a bootstrap preview and creates the new `/srv/bladesbeats/current` staging symlink if one does not exist. The active Nginx configuration is untouched, so this staging step does not change the public site.
+The installer creates the unprivileged `bladesbeats-desk` service account, private state directories, the constrained root publish helper and the daily source-check timer. It validates a bootstrap preview and creates the new `/srv/bladesbeats/current` staging symlink if one does not exist. The active Nginx configuration is untouched, so this staging step does not change the public site.
 
 Store optional source API credentials in `/etc/bladesbeats/release-check.env`, owned by root and mode `0600`:
 
@@ -37,7 +37,7 @@ SPOTIFY_CLIENT_SECRET=...
 YOUTUBE_API_KEY=...
 ```
 
-Apple Music and Mixcloud checks do not need credentials. Missing Spotify or YouTube credentials cause those sources to be reported as skipped, not treated as successful empty catalogues.
+Apple Music, Mixcloud and the YouTube channel feed do not need credentials. A YouTube API key is optional and enables the API-based check. Spotify needs developer credentials; when they are absent, only Spotify is reported as skipped rather than treated as an empty catalogue.
 
 ## Start a temporary session
 
@@ -47,13 +47,14 @@ From any root SSH session:
 release-desk
 ```
 
-The command prints an address like:
+The command prints a temporary address and a separate one-time password:
 
 ```text
-https://203.0.113.10:43827/#token=<one-time-token>
+URL:      https://203.0.113.10:43827/
+Password: <random-one-time-password>
 ```
 
-The token is kept in the URL fragment so it is not sent in the first HTTP request or written to normal access logs. It can be exchanged once, expires after ten minutes, and becomes a Secure, HttpOnly, SameSite=Strict session cookie. The session closes after 20 minutes of inactivity or two hours maximum.
+The password is printed only in the SSH terminal. It is exchanged once through the HTTPS login form, expires after ten minutes, and becomes a Secure, HttpOnly, SameSite=Strict session cookie. The raw password is not stored after server startup. The session closes after 20 minutes of inactivity or two hours maximum.
 
 Press Ctrl+C in SSH to stop the process. The launcher trap terminates the panel, deletes the copied short-lived certificate material and removes the exact temporary firewall rule.
 
@@ -76,9 +77,9 @@ Publication also remains disabled until `data/legal.json` contains the approved 
 
 Only versions recorded as previously published appear in the rollback list. Type `ROLLBACK <version>` and accept the confirmation. Rollback uses the same validation, atomic switch and health check as publication.
 
-## Weekly release checks
+## Daily release checks
 
-The enabled timer runs on Mondays around 05:00 server time with a randomized delay. Inspect it with:
+The enabled timer runs every day around 05:00 server time with a randomized delay. Inspect it with:
 
 ```text
 systemctl status bladesbeats-release-check.timer

@@ -9,6 +9,8 @@ DESK_USER="bladesbeats-desk"
 command -v node >/dev/null || { echo "Node.js 20 or newer is required." >&2; exit 1; }
 node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' || { echo "Node.js 20 or newer is required." >&2; exit 1; }
 command -v certbot >/dev/null || { echo "Certbot 5.4 or newer is required for IP certificates." >&2; exit 1; }
+CERTBOT_VERSION="$(certbot --version 2>&1 | awk '{print $2}')"
+[[ "$(printf '%s\n' '5.4' "${CERTBOT_VERSION}" | sort -V | head -n 1)" == "5.4" ]] || { echo "Certbot 5.4 or newer is required; found ${CERTBOT_VERSION:-unknown}." >&2; exit 1; }
 command -v nginx >/dev/null || { echo "Nginx is required." >&2; exit 1; }
 
 id "${DESK_USER}" >/dev/null 2>&1 || useradd --system --home-dir /var/lib/bladesbeats --create-home --shell /usr/sbin/nologin "${DESK_USER}"

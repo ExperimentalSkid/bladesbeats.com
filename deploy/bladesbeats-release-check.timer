@@ -1,9 +1,9 @@
 [Unit]
-Description=Run the BladesBeats release source check weekly
+Description=Run the BladesBeats release source check daily
 
 [Timer]
-OnCalendar=Mon *-*-* 05:00:00
-RandomizedDelaySec=45m
+OnCalendar=*-*-* 05:00:00
+RandomizedDelaySec=30m
 Persistent=true
 
 [Install]

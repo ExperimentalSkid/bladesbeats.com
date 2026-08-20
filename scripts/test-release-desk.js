@@ -45,6 +45,11 @@ async function main() {
   });
   try {
     await waitForServer(child);
+    const loginPage = await fetch(`${origin}/`);
+    const loginHtml = await loginPage.text();
+    assert.match(loginHtml, /data-login-form/);
+    assert.match(loginHtml, /data-login-password/);
+    assert.doesNotMatch(loginHtml, /location\.hash|#token/);
     const login = await fetch(`${origin}/api/session`, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify({ token: TOKEN }) });
     assert.equal(login.status, 200);
     assert.match(login.headers.get("content-security-policy") || "", /default-src 'none'/);
@@ -58,7 +63,8 @@ async function main() {
     const stateResponse = await fetch(`${origin}/api/state`, { headers: { cookie } });
     assert.equal(stateResponse.status, 200);
     const state = await stateResponse.json();
-    assert.equal(state.releases.length, 42);
+    assert.ok(state.releases.length > 0);
+    assert.ok(state.releases.every((item) => !/(?:dj\s*set|session|mix|remix|edit)/i.test(item.type)));
     assert.equal(state.publishEnabled, false);
     assert.ok(Array.isArray(state.launchBlockers));
 
@@ -80,7 +86,7 @@ async function main() {
     const preview = await fetch(`${origin}${prepared.previewPath}`, { headers: { cookie } });
     assert.equal(preview.status, 200);
     const previewHtml = await preview.text();
-    assert.ok(previewHtml.includes(`${prepared.previewPath}assets/js/catalog-hero.js`));
+    assert.ok(previewHtml.includes(`${prepared.previewPath}assets/js/site.js`));
     const manifest = await fetch(`${origin}${prepared.previewPath}release-manifest.json`, { headers: { cookie } });
     assert.equal(manifest.status, 404);
 

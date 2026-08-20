@@ -10,11 +10,14 @@
   const empty = document.querySelector("[data-empty]");
   const status = document.querySelector("[data-session-status]");
   const sessionTime = document.querySelector("[data-session-time]");
+  const loginForm = document.querySelector("[data-login-form]");
+  const loginPassword = document.querySelector("[data-login-password]");
+  const loginSubmit = document.querySelector("[data-login-submit]");
+  const loginStatus = document.querySelector("[data-login-status]");
 
   function setNotice(message, error) {
-    notice.hidden = !message;
-    notice.querySelector("p").textContent = message || "";
-    notice.classList.toggle("status-error", Boolean(error));
+    loginStatus.textContent = message || "";
+    loginStatus.classList.toggle("status-error", Boolean(error));
   }
 
   async function request(url, options) {
@@ -28,20 +31,41 @@
   }
 
   async function authenticate() {
-    const token = new URLSearchParams(location.hash.slice(1)).get("token");
-    if (token) {
+    try {
+      await refresh();
+    } catch {
+      notice.hidden = false;
+      status.textContent = "Waiting for password";
+      sessionTime.textContent = "";
+      loginPassword.focus();
+    }
+  }
+
+  loginForm.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    const token = loginPassword.value.trim();
+    if (!token) return;
+    loginSubmit.disabled = true;
+    setNotice("Checking password…", false);
+    try {
       const result = await request("/api/session", { method: "POST", body: JSON.stringify({ token: token }) });
       csrf = result.csrf;
-      history.replaceState({}, "", location.pathname);
+      loginPassword.value = "";
+      await refresh();
+    } catch (error) {
+      setNotice(error.message === "invalid_or_expired_token" ? "That password is invalid, expired, or has already been used." : error.message, true);
+      loginPassword.select();
+    } finally {
+      loginSubmit.disabled = false;
     }
-    await refresh();
-  }
+  });
 
   async function refresh() {
     const value = await request("/api/state");
     csrf = value.csrf;
     state = value;
     app.hidden = false;
+    notice.hidden = true;
     setNotice("");
     status.textContent = "Authenticated";
     status.className = "status-ok";
@@ -147,7 +171,7 @@
       option.textContent = item.title + (item.releaseDate ? " · " + item.releaseDate : "");
       select.appendChild(option);
     });
-    document.querySelector("[data-feature-add]").disabled = selected.length >= 8 || available.length === 0;
+    document.querySelector("[data-feature-add]").disabled = selected.length >= 4 || available.length === 0;
     target.replaceChildren.apply(target, selected.map(function (slug, index) {
       const item = bySlug.get(slug) || { title: slug, releaseDate: "" };
       const row = document.createElement("div"); row.className = "feature-row";

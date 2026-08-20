@@ -21,7 +21,7 @@ const INACTIVITY_MS = 20 * 60 * 1000;
 const MAX_SESSION_MS = 2 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_LIMIT = 5;
-const SESSION_COOKIE = "bb_release_session";
+const SESSION_COOKIE = DEV ? "bb_release_session" : "__Host-bb_release_session";
 
 fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
 fs.mkdirSync(RELEASES_DIR, { recursive: true, mode: 0o750 });
@@ -35,9 +35,15 @@ function readToken() {
   return token;
 }
 
-let oneTimeToken = readToken();
-if (!oneTimeToken && DEV) oneTimeToken = crypto.randomBytes(32).toString("hex");
-if (!oneTimeToken) throw new Error("Release Desk requires a one-time token.");
+function secretHash(value) {
+  return crypto.createHash("sha256").update(String(value || ""), "utf8").digest("hex");
+}
+
+let oneTimeTokenHash = (() => {
+  const token = readToken() || (DEV ? crypto.randomBytes(32).toString("hex") : "");
+  if (!token) throw new Error("Release Desk requires a one-time token.");
+  return secretHash(token);
+})();
 const tokenExpiresAt = Date.now() + 10 * 60 * 1000;
 let session = null;
 let prepared = readJson(path.join(DATA_DIR, "prepared.json"), null);
@@ -117,7 +123,9 @@ function securityHeaders(contentType = "application/json; charset=utf-8") {
     "x-frame-options": "DENY",
     "referrer-policy": "no-referrer",
     "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
-    "content-security-policy": "default-src 'none'; style-src 'self' https://fonts.googleapis.com; script-src 'self'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; frame-src https://www.youtube-nocookie.com https://www.mixcloud.com; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    "content-security-policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' https: data:; frame-src https://www.youtube-nocookie.com https://www.mixcloud.com; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-resource-policy": "same-origin",
     ...(DEV ? {} : { "strict-transport-security": "max-age=31536000" })
   };
 }
@@ -348,8 +356,8 @@ async function api(req, res, pathname) {
     if (attempts.length >= LOGIN_LIMIT) { send(res, 429, { error: "too_many_attempts" }); return; }
     attempts.push(Date.now()); loginAttempts.set(ip, attempts);
     const body = await requestBody(req);
-    if (Date.now() > tokenExpiresAt || !oneTimeToken || !timingEqual(body.token, oneTimeToken)) { appendAudit("login_rejected", { ip }); send(res, 401, { error: "invalid_or_expired_token" }); return; }
-    oneTimeToken = "";
+    if (Date.now() > tokenExpiresAt || !oneTimeTokenHash || !timingEqual(secretHash(body.token), oneTimeTokenHash)) { appendAudit("login_rejected", { ip }); send(res, 401, { error: "invalid_or_expired_token" }); return; }
+    oneTimeTokenHash = "";
     session = { id: randomSecret(), csrf: randomSecret(), createdAt: Date.now(), lastSeenAt: Date.now() };
     lastActivity = Date.now();
     appendAudit("session_started", { ip });
@@ -360,7 +368,7 @@ async function api(req, res, pathname) {
     if (!authenticated(req)) { send(res, 401, { error: "authentication_required" }); return; }
     const state = candidateState();
     const settings = readJson(path.join(ROOT, "config", "site.json"), {});
-    const releases = readJson(path.join(ROOT, "data", "releases.json"), []).filter((item) => !isExcludedRelease(item)).sort((a, b) => String(b.releaseDate || "").localeCompare(String(a.releaseDate || ""))).map((item) => ({ slug: item.slug, title: item.title, releaseDate: item.releaseDate || "", type: item.type || "single" }));
+    const releases = readJson(path.join(ROOT, "data", "releases.json"), []).filter((item) => !isExcludedRelease(item) && !/(?:dj\s*set|session|mix|remix|edit)/i.test(String(item.type || ""))).sort((a, b) => String(b.releaseDate || "").localeCompare(String(a.releaseDate || ""))).map((item) => ({ slug: item.slug, title: item.title, releaseDate: item.releaseDate || "", type: item.type || "single" }));
     const blockers = launchBlockers();
     send(res, 200, { ok: true, csrf: session.csrf, expiresAt: session.createdAt + MAX_SESSION_MS, inactivityMs: INACTIVITY_MS, checkedAt: state.checkedAt || "", candidates: state.candidates || [], checks: (state.checks || []).slice(-5), featuredReleaseSlugs: settings.featuredReleaseSlugs || [], releases, prepared: previewPrepared(), versions: publishedVersions(), launchBlockers: blockers, publishEnabled: Boolean(PUBLISH_COMMAND) && blockers.length === 0 });
     return;
@@ -398,7 +406,7 @@ async function api(req, res, pathname) {
     const body = await requestBody(req);
     const settingsFile = path.join(ROOT, "config", "site.json");
     const settings = readJson(settingsFile, {});
-    const allowed = new Set(readJson(path.join(ROOT, "data", "releases.json"), []).filter((item) => !isExcludedRelease(item)).map((item) => item.slug));
+    const allowed = new Set(readJson(path.join(ROOT, "data", "releases.json"), []).filter((item) => !isExcludedRelease(item) && !/(?:dj\s*set|session|mix|remix|edit)/i.test(String(item.type || ""))).map((item) => item.slug));
     let values;
     if (Array.isArray(body.slugs)) {
       values = [...new Set(body.slugs.map(String))];
@@ -407,7 +415,7 @@ async function api(req, res, pathname) {
       values = (settings.featuredReleaseSlugs || []).filter((value) => value !== slug);
       if (body.featured) values.push(slug);
     }
-    if (values.length > 8) { send(res, 400, { error: "feature_limit", message: "Choose no more than eight homepage features." }); return; }
+    if (values.length > 4) { send(res, 400, { error: "feature_limit", message: "Choose no more than four homepage release features." }); return; }
     if (values.some((slug) => !allowed.has(slug))) { send(res, 400, { error: "unknown_release", message: "A selected homepage feature is not in the approved catalogue." }); return; }
     const changed = JSON.stringify(values) !== JSON.stringify(settings.featuredReleaseSlugs || []);
     settings.featuredReleaseSlugs = values;

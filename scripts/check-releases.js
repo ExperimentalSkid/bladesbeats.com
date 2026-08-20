@@ -13,6 +13,7 @@ const STATE_FILE = path.join(DATA_DIR, "candidates.json");
 const SPOTIFY_ARTIST_ID = "63221ca19GsgTnQISR51xl";
 const APPLE_ARTIST_ID = "1729442137";
 const YOUTUBE_HANDLE = "BladesBeats";
+const YOUTUBE_CHANNEL_ID = "UCjxsnAGH1Eh8WI2RxJNM_HA";
 const MIXCLOUD_USER = "BladesBeats";
 const checkedAt = new Date().toISOString();
 
@@ -34,6 +35,18 @@ async function fetchJson(url, options = {}) {
     const response = await fetch(url, { ...options, signal: controller.signal, headers: { "user-agent": "BladesBeats Release Desk/1.0", accept: "application/json", ...(options.headers || {}) } });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchText(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal, headers: { "user-agent": "BladesBeats Release Desk/1.0", accept: "application/atom+xml,text/xml,text/plain", ...(options.headers || {}) } });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    return await response.text();
   } finally {
     clearTimeout(timer);
   }
@@ -101,10 +114,9 @@ async function spotifyCandidates() {
 }
 
 async function appleCandidates() {
-  const url = new URL("https://itunes.apple.com/search");
-  url.searchParams.set("term", "BladesBeats");
+  const url = new URL("https://itunes.apple.com/lookup");
+  url.searchParams.set("id", APPLE_ARTIST_ID);
   url.searchParams.set("entity", "song");
-  url.searchParams.set("attribute", "artistTerm");
   url.searchParams.set("country", "ES");
   url.searchParams.set("limit", "200");
   const payload = await fetchJson(url);
@@ -122,7 +134,7 @@ async function appleCandidates() {
 
 async function youtubeCandidates() {
   const key = process.env.YOUTUBE_API_KEY;
-  if (!key) return { source: "youtube", skipped: "YOUTUBE_API_KEY not configured", items: [] };
+  if (!key) return youtubeFeedCandidates();
   const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
   channelUrl.searchParams.set("part", "contentDetails");
   channelUrl.searchParams.set("forHandle", YOUTUBE_HANDLE);
@@ -143,7 +155,7 @@ async function youtubeCandidates() {
     videos.push(...(page.items || []));
     pageToken = page.nextPageToken || "";
   } while (pageToken);
-  return { source: "youtube", items: videos.filter((item) => !/#shorts\b/i.test(item.snippet?.title || "")).map((item) => {
+  return { source: "youtube", items: videos.map((item) => {
     const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
     return candidate("youtube", videoId, {
       title: item.snippet?.title,
@@ -155,6 +167,40 @@ async function youtubeCandidates() {
       platformIds: { youtubeId: videoId }
     });
   }) };
+}
+
+function decodeXml(value) {
+  return String(value || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'");
+}
+
+function xmlValue(block, tag) {
+  const match = String(block).match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return match ? decodeXml(match[1].trim()) : "";
+}
+
+async function youtubeFeedCandidates() {
+  const xml = await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${YOUTUBE_CHANNEL_ID}`);
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/gi)].map((match) => match[1]);
+  if (!entries.length) throw new Error("official YouTube uploads feed returned no entries");
+  return { source: "youtube", note: "credential-free official channel feed", items: entries.map((entry) => {
+    const videoId = xmlValue(entry, "yt:videoId");
+    const thumbnail = entry.match(/<media:thumbnail[^>]+url="([^"]+)"/i)?.[1] || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    const title = xmlValue(entry, "title");
+    return candidate("youtube", videoId, {
+      title,
+      artist: "BladesBeats",
+      releaseDate: xmlValue(entry, "published"),
+      type: inferType(title),
+      image: decodeXml(thumbnail),
+      links: { youtube: `https://www.youtube.com/watch?v=${videoId}` },
+      platformIds: { youtubeId: videoId }
+    });
+  }).filter((item) => item.sourceId && item.title) };
 }
 
 async function mixcloudCandidates() {
@@ -234,7 +280,7 @@ async function main() {
   const discovered = [];
   for (const [index, result] of results.entries()) {
     if (result.status === "fulfilled") {
-      diagnostics.push({ source: result.value.source, ok: true, count: result.value.items.length, skipped: result.value.skipped || "" });
+      diagnostics.push({ source: result.value.source, ok: true, count: result.value.items.length, skipped: result.value.skipped || "", note: result.value.note || "" });
       discovered.push(...result.value.items);
     } else {
       diagnostics.push({ source: sources[index][0], ok: false, error: String(result.reason?.message || result.reason) });
