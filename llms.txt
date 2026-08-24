@@ -1,6 +1,6 @@
 # BladesBeats
 
-> BladesBeats is a Norwegian-born DJ and producer based in Sevilla, Spain. This is the short AI-readable index for the official BladesBeats artist profile.
+> BladesBeats is a Norwegian DJ and producer based in Sevilla, Spain, creating club-focused electronic music, original releases, remixes, and DJ sets. This is the short AI-readable index for the official artist profile.
 
 BladesBeats is a Norwegian DJ and music producer based in Sevilla, Spain. The project connects an Oslo/Holmlia beginning with a Sevilla restart, production work with Manuel Ávila / Baster Beats, DJ training with Quini Rivera at Impulsa Music Center, and a club-focused electronic direction.
 
@@ -32,7 +32,7 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 - Current base: Sevilla, Spain
 - Direction: club-focused electronic music
 - Languages: English and Spanish
-- Primary contact route: Instagram
+- Primary contact routes: website booking form and Instagram
 - Main website: https://bladesbeats.com/
 - Music index: https://bladesbeats.com/music/
 - Booking page: https://bladesbeats.com/booking/
@@ -79,11 +79,8 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 
 ## Official social and contact
 
-- [Instagram](https://www.instagram.com/blades_beats/): Primary social channel and preferred contact route for DJ booking inquiries, remixes, collaborations, and direct messages.
+- [Instagram](https://www.instagram.com/blades_beats/): Primary social channel and an alternative route for direct messages. Use the website booking page for structured DJ booking and collaboration inquiries.
 - [TikTok](https://www.tiktok.com/@bladesbeats): Short-form social channel.
-
-## Legacy utility status
-
 
 ## Suggested wording
 

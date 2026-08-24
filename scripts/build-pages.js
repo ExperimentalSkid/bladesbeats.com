@@ -437,6 +437,23 @@ function compactReleasePageTitle(title, maxLength = 65) {
   return escapeHtml(`${shortened.trimEnd()}…${separator}${brand}`);
 }
 
+function compactMetaDescription(value, maxLength = 155) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if ([...text].length <= maxLength) return text;
+  const available = Math.max(24, maxLength - 1);
+  let shortened = [...text].slice(0, available).join("").trimEnd();
+  const lastSpace = shortened.lastIndexOf(" ");
+  if (lastSpace >= Math.floor(available * .72)) shortened = shortened.slice(0, lastSpace);
+  return `${shortened.trimEnd()}…`;
+}
+
+function naturalList(items, lang = "en") {
+  return new Intl.ListFormat(lang === "es" ? "es-ES" : "en-GB", {
+    style: "long",
+    type: "conjunction"
+  }).format(items.filter(Boolean));
+}
+
 function socialImageDimensions(image, fallback = { width: 1200, height: 630 }) {
   const value = String(image || "");
   const apple = value.match(/\/(\d+)x(\d+)bb\.(?:jpe?g|png)(?:\?.*)?$/i);
@@ -560,7 +577,7 @@ function renderAlternates(alternates) {
   ].join("\n");
 }
 
-function mailtoLegalLink(legal, label = "contacto por correo") {
+function mailtoLegalLink(legal, label = "correo de contacto de BladesBeats") {
   return `<a href="mailto:${escapeAttr(legal.contactEmail)}">${escapeHtml(label)}</a>`;
 }
 
@@ -602,7 +619,7 @@ function staticNav(lang, activeNav, alternates) {
     ? { music: "/es/musica/", sets: "/es/sesiones/", gigs: "/es/eventos/", about: "/es/sobre-bladesbeats/", booking: "/es/contratar-dj-sevilla/" }
     : { music: "/music/", sets: "/dj-sets/", gigs: "/gigs/", about: "/about/", booking: "/booking/" };
   return `<button class="site-nav-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">Menu</button>
-    <nav class="site-nav-menu" id="primary-navigation" aria-label="Primary">
+    <nav class="site-nav-menu" id="primary-navigation" aria-label="${lang === "es" ? "Navegación principal" : "Primary navigation"}">
       ${Object.keys(labels).map((key) => `<a${activeNav === key ? ` class="active" aria-current="page"` : ""} href="${urls[key]}">${labels[key]}</a>`).join("\n      ")}
       ${languageLink(lang, alternates)}
     </nav>`;
@@ -614,7 +631,7 @@ function siteFooter(lang = "en") {
   <div class="site-footer-inner">
     <div class="site-footer-col">
       <p class="site-footer-mark">BladesBeats</p>
-      <p class="site-footer-tagline">${isEs ? "DJ y productor basado en Sevilla, España. Originario de Oslo, Noruega." : "DJ and producer based in Sevilla, Spain. Originally from Oslo, Norway."}</p>
+      <p class="site-footer-tagline">${isEs ? "DJ y productor noruego basado en Sevilla, centrado en música electrónica para club." : "Norwegian DJ and producer based in Sevilla, creating club-focused electronic music."}</p>
     </div>
     <div class="site-footer-col">
       <p class="site-footer-label">${isEs ? "Escuchar" : "Listen"}</p>
@@ -626,7 +643,7 @@ function siteFooter(lang = "en") {
       </ul>
     </div>
     <div class="site-footer-col">
-      <p class="site-footer-label">${isEs ? "Conectar" : "Connect"}</p>
+      <p class="site-footer-label">${isEs ? "Redes y contacto" : "Follow &amp; contact"}</p>
       <ul class="site-footer-list">
         <li><a href="https://www.instagram.com/blades_beats/" target="_blank" rel="noopener noreferrer">Instagram</a></li>
         <li><a href="https://www.tiktok.com/@bladesbeats" target="_blank" rel="noopener noreferrer">TikTok</a></li>
@@ -634,7 +651,7 @@ function siteFooter(lang = "en") {
       </ul>
     </div>
     <div class="site-footer-col">
-      <p class="site-footer-label">${isEs ? "Sitio" : "Site"}</p>
+      <p class="site-footer-label">${isEs ? "Explorar" : "Explore"}</p>
       <ul class="site-footer-list">
         <li><a href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Música" : "Music"}</a></li>
         <li><a href="${isEs ? "/es/sesiones/" : "/dj-sets/"}">${isEs ? "Sesiones" : "DJ sets"}</a></li>
@@ -765,6 +782,9 @@ function basePage({ title, description, canonical, label, h1, intro, body, jsonL
   const locale = lang === "es" ? "es_ES" : "en_US";
   const alternateLocale = lang === "es" ? "en_US" : "es_ES";
   const hasContactForm = body.includes("data-contact-form");
+  const localizedSocialImageAlt = lang === "es" && socialImageAlt === "BladesBeats official artist image"
+    ? "Imagen oficial del artista BladesBeats"
+    : socialImageAlt;
   const imagePreconnect = externalImagePreconnect(socialImage);
   const extraCss = `
 html.modal-open{overflow:hidden}
@@ -1102,14 +1122,14 @@ ${alternateTags}
 <meta property="og:image" content="${escapeAttr(socialImage)}">
 <meta property="og:image:width" content="${escapeAttr(socialImageWidth)}">
 <meta property="og:image:height" content="${escapeAttr(socialImageHeight)}">
-<meta property="og:image:alt" content="${escapeAttr(socialImageAlt)}">
+<meta property="og:image:alt" content="${escapeAttr(localizedSocialImageAlt)}">
 <meta property="og:locale" content="${locale}">
 <meta property="og:locale:alternate" content="${alternateLocale}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${escapeAttr(title.replace(/&mdash;/g, "-"))}">
 <meta name="twitter:description" content="${escapeAttr(description)}">
 <meta name="twitter:image" content="${escapeAttr(socialImage)}">
-<meta name="twitter:image:alt" content="${escapeAttr(socialImageAlt)}">
+<meta name="twitter:image:alt" content="${escapeAttr(localizedSocialImageAlt)}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 ${imagePreconnect}
@@ -1126,7 +1146,7 @@ ${jsonLd ? renderJsonLd(jsonLd) : ""}
 <div class="site-shell">
   <header class="site-nav" role="banner">
     <div class="site-nav-inner">
-      <a class="site-nav-mark" href="${lang === "es" ? "/es/" : "/"}" aria-label="BladesBeats home">BladesBeats</a>
+      <a class="site-nav-mark" href="${lang === "es" ? "/es/" : "/"}" aria-label="${lang === "es" ? "Inicio de BladesBeats" : "BladesBeats home"}">BladesBeats</a>
       <span class="site-nav-rule" aria-hidden="true"></span>
       ${staticNav(lang, activeNav, alternates)}
     </div>
@@ -1136,7 +1156,7 @@ ${jsonLd ? renderJsonLd(jsonLd) : ""}
       ${showPageHead ? `<section class="page-head">
         <p class="page-eyebrow">${escapeHtml(label)}</p>
         <div>
-          <h1 class="page-title">${escapeHtml(displayH1)}<span class="page-title-dot">.</span></h1>
+          <h1 class="page-title">${escapeHtml(displayH1)}<span class="page-title-dot" aria-hidden="true">.</span></h1>
           <span class="page-rule" aria-hidden="true"></span>
           <p class="page-subtitle">${escapeHtml(intro)}</p>
         </div>
@@ -1165,10 +1185,9 @@ function mixcloudEmbedPlaceholder(set, lang = "en") {
   const isEs = lang === "es";
   return `<div class="embed embed-consent" data-embed-shell>
     <div class="embed-consent-panel">
-      <p class="mixcloud-chart-label">Mixcloud player</p>
-      <p>${isEs ? "El reproductor de Mixcloud se carga solo cuando eliges abrirlo." : "The Mixcloud player is loaded from Mixcloud only after you choose to open it."}</p>
-      <p>${isEs ? "Al cargar el reproductor, Mixcloud puede aplicar sus propias cookies y políticas." : "When the player loads, Mixcloud may apply its own cookies and policies."}</p>
-      <button class="button primary" type="button" data-embed-load data-src="${escapeAttr(set.embedUrl)}" data-title="${escapeAttr(set.title)} Mixcloud player">${isEs ? "Cargar reproductor de Mixcloud" : "Load Mixcloud player"}</button>
+      <p class="mixcloud-chart-label">${isEs ? "Reproductor de Mixcloud" : "Mixcloud player"}</p>
+      <p>${isEs ? "Mixcloud solo se conecta cuando cargas el reproductor. Desde ese momento se aplican sus condiciones de privacidad y cookies." : "Mixcloud connects only after you load the player. Its privacy and cookie terms then apply."}</p>
+      <button class="button primary" type="button" data-embed-load data-src="${escapeAttr(set.embedUrl)}" data-title="${escapeAttr(set.title)} Mixcloud player">${isEs ? "Escuchar en Mixcloud" : "Listen on Mixcloud"}</button>
     </div>
   </div>`;
 }
@@ -1241,17 +1260,31 @@ function formatReleaseDate(date, lang = "en") {
 
 function releaseSummary(release, lang = "en") {
   const isEs = lang === "es";
-  const title = displayReleaseTitle(release);
   const date = formatReleaseDate(release.releaseDate, lang);
   const type = releaseTypeLabel(release.type, lang);
   if (isYoutubeOnlyRelease(release)) {
     return isEs
-      ? `${title} es un ${type} de BladesBeats publicado${date ? ` el ${date}` : ""} en el canal oficial de YouTube.`
-      : `${title} is a BladesBeats ${type}${date ? ` published on ${date}` : ""} on the official YouTube channel.`;
+      ? `Un ${type} de BladesBeats, publicado${date ? ` el ${date}` : ""} en el canal oficial de YouTube.`
+      : `A BladesBeats ${type}, published${date ? ` on ${date}` : ""} on the official YouTube channel.`;
   }
   return isEs
-    ? `${title} es un ${type} oficial de BladesBeats${date ? ` publicado el ${date}` : ""}.`
-    : `${title} is an official BladesBeats ${type}${date ? ` released on ${date}` : ""}.`;
+    ? `Un ${type} oficial de BladesBeats${date ? `, publicado el ${date}` : ""}.`
+    : `An official BladesBeats ${type}${date ? `, released on ${date}` : ""}.`;
+}
+
+function setSummary(set, lang = "en") {
+  const isEs = lang === "es";
+  const genres = Array.isArray(set.genres)
+    ? set.genres.slice(0, 3).map((genre) => String(genre).toLocaleLowerCase(isEs ? "es-ES" : "en-GB"))
+    : [];
+  if (genres.length) {
+    return isEs
+      ? `Una sesión oficial de BladesBeats que recorre ${naturalList(genres, lang)}. Escúchala completa en Mixcloud.`
+      : `An official BladesBeats session moving through ${naturalList(genres, lang)}. Listen in full on Mixcloud.`;
+  }
+  return isEs
+    ? "Una sesión DJ oficial de BladesBeats. Escúchala completa en Mixcloud."
+    : "An official BladesBeats DJ set. Listen in full on Mixcloud.";
 }
 
 function youtubeEmbedPlaceholder(release, lang = "en") {
@@ -1262,9 +1295,8 @@ function youtubeEmbedPlaceholder(release, lang = "en") {
   return `<div class="embed video-embed embed-consent" data-embed-shell>
     <div class="embed-consent-panel">
       <p class="mixcloud-chart-label">YouTube</p>
-      <p>${isEs ? `Reproduce ${escapeHtml(title)} aquí sin salir de la página.` : `Watch ${escapeHtml(title)} here without leaving the page.`}</p>
-      <p>${isEs ? "El reproductor se conecta a YouTube solo cuando eliges cargarlo." : "The player connects to YouTube only after you choose to load it."}</p>
-      <button class="button primary" type="button" data-embed-load data-src="${escapeAttr(embedUrl)}" data-title="${escapeAttr(title)} YouTube player">${isEs ? "Cargar video de YouTube" : "Load YouTube video"}</button>
+      <p>${isEs ? `Reproduce ${escapeHtml(title)} aquí. YouTube solo se conecta cuando cargas el video; desde ese momento se aplican sus condiciones de privacidad y cookies.` : `Watch ${escapeHtml(title)} here. YouTube connects only after you load the video; its privacy and cookie terms then apply.`}</p>
+      <button class="button primary" type="button" data-embed-load data-src="${escapeAttr(embedUrl)}" data-title="${escapeAttr(title)} YouTube player">${isEs ? "Ver en YouTube" : "Watch on YouTube"}</button>
     </div>
   </div>`;
 }
@@ -1273,12 +1305,13 @@ function releaseTypeLabel(type, lang = "en") {
   const key = String(type || "single").toLowerCase();
   if (lang !== "es") return type || "single";
   const labels = {
-    single: "single",
+    single: "sencillo",
     remix: "remix",
-    edit: "edit",
+    edit: "edición",
     mashup: "mashup",
     instrumental: "instrumental",
-    video: "video"
+    video: "video",
+    "dj set": "sesión DJ"
   };
   return labels[key] || type || "single";
 }
@@ -1422,15 +1455,15 @@ function platformCatalog(releases, sets, lang = "en") {
       key: "apple-music",
       name: "Apple Music",
       count: countLabel(appleEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
-      copy: isEs ? "Lanzamientos con enlaces directos en Apple Music." : "Releases with direct Apple Music links.",
+      copy: isEs ? "Explora lanzamientos con enlaces verificados de Apple Music." : "Explore releases with verified Apple Music links.",
       profileUrl: appleUrl,
       entries: appleEntries
     },
     {
       key: "spotify",
       name: "Spotify",
-      count: countLabel(spotifyEntries.length, isEs ? "entrada" : "item", isEs ? "entradas" : "items"),
-      copy: isEs ? "Abre BladesBeats en Spotify por t\u00edtulo o perfil oficial." : "Open BladesBeats on Spotify by title or official profile.",
+      count: countLabel(spotifyEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
+      copy: isEs ? "Abre un lanzamiento o búscalo por título en Spotify." : "Open a release or search Spotify by title.",
       profileUrl: spotifyUrl,
       entries: spotifyEntries
     },
@@ -1438,15 +1471,15 @@ function platformCatalog(releases, sets, lang = "en") {
       key: "mixcloud",
       name: "Mixcloud",
       count: countLabel(mixcloudEntries.length, isEs ? "sesi\u00f3n" : "set", isEs ? "sesiones" : "sets"),
-      copy: isEs ? "Sesiones DJ oficiales publicadas en Mixcloud." : "Official DJ sets published on Mixcloud.",
+      copy: isEs ? "Escucha sesiones DJ completas en el perfil oficial de Mixcloud." : "Listen to full DJ sets on the official Mixcloud profile.",
       profileUrl: mixcloudUrl,
       entries: mixcloudEntries
     },
     {
       key: "youtube",
       name: "YouTube",
-      count: countLabel(youtubeEntries.length, isEs ? "entrada" : "item", isEs ? "entradas" : "items"),
-      copy: isEs ? "Abre BladesBeats en YouTube por t\u00edtulo o canal oficial." : "Open BladesBeats on YouTube by title or official channel.",
+      count: countLabel(youtubeEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
+      copy: isEs ? "Mira remixes, edits y sesiones en el canal oficial de YouTube." : "Watch remixes, edits, and sets on the official YouTube channel.",
       profileUrl: youtubeUrl,
       entries: youtubeEntries
     },
@@ -1454,7 +1487,7 @@ function platformCatalog(releases, sets, lang = "en") {
       key: "instagram",
       name: "Instagram",
       count: isEs ? "Perfil" : "Profile",
-      copy: isEs ? "Perfil social oficial de BladesBeats." : "Official BladesBeats social profile.",
+      copy: isEs ? "Sigue novedades, clips y actividad de BladesBeats en Instagram." : "Follow BladesBeats updates, clips, and activity on Instagram.",
       profileUrl: instagramUrl,
       entries: profilePlatformEntries("Instagram", instagramUrl, lang)
     },
@@ -1462,7 +1495,7 @@ function platformCatalog(releases, sets, lang = "en") {
       key: "tiktok",
       name: "TikTok",
       count: isEs ? "Perfil" : "Profile",
-      copy: isEs ? "Perfil social oficial de BladesBeats." : "Official BladesBeats social profile.",
+      copy: isEs ? "Mira los clips de BladesBeats en el perfil oficial de TikTok." : "Watch BladesBeats clips on the official TikTok profile.",
       profileUrl: tiktokUrl,
       entries: profilePlatformEntries("TikTok", tiktokUrl, lang)
     }
@@ -1475,7 +1508,7 @@ function platformCatalog(releases, sets, lang = "en") {
     <span class="platform-count">${escapeHtml(platform.count)}</span>
   </span>
   <span class="platform-card-copy">${escapeHtml(platform.copy)}</span>
-  <span class="platform-card-action">${isEs ? "Abrir" : "Open"}</span>
+  <span class="platform-card-action">${isEs ? "Ver opciones" : "View options"}</span>
 </button>`;
   }).join("\n");
   const modals = platforms.map((platform) => {
@@ -1497,8 +1530,8 @@ function platformCatalog(releases, sets, lang = "en") {
   return `<section class="platform-catalog" aria-label="${isEs ? "Plataformas oficiales de BladesBeats" : "BladesBeats official platforms"}">
   <div class="catalog-section-head">
     <span>${isEs ? "Plataformas oficiales" : "Official platforms"}</span>
-    <h2>${isEs ? "Explora por plataforma." : "Browse by platform."}</h2>
-    <p>${isEs ? "Encuentra enlaces directos, búsquedas por título y los perfiles oficiales de BladesBeats." : "Find direct links, title searches, and the official BladesBeats profiles."}</p>
+    <h2>${isEs ? "Elige una plataforma" : "Choose a platform"}</h2>
+    <p>${isEs ? "Abre enlaces directos, busca lanzamientos por título o visita un perfil oficial de BladesBeats." : "Open direct release links, search by title, or visit an official BladesBeats profile."}</p>
   </div>
   <div class="platform-catalog-grid">${cards}</div>
   ${modals}
@@ -1516,9 +1549,10 @@ function releasePreview(releases, lang = "en") {
     const image = release.image || "/og-card.png";
     const date = formatReleaseDate(release.releaseDate, lang) || itemYear(release);
     const type = releaseTypeLabel(release.type, lang);
+    const coverAlt = isEs ? `Portada de ${title}` : `${title} cover artwork`;
     return `<article class="release-card">
   <a class="release-card-cover" href="${escapeAttr(href)}">
-    <img src="${escapeAttr(image)}" alt="${escapeAttr(title)} cover artwork" loading="lazy" decoding="async" width="600" height="600">
+    <img src="${escapeAttr(image)}" alt="${escapeAttr(coverAlt)}" loading="lazy" decoding="async" width="600" height="600">
   </a>
   <div class="release-card-body">
     <p class="release-card-meta">${escapeHtml(date)}${type ? ` &middot; ${escapeHtml(type)}` : ""}</p>
@@ -1530,8 +1564,8 @@ function releasePreview(releases, lang = "en") {
   return `<section class="release-preview" aria-labelledby="latest-releases-title">
   <div class="catalog-section-head">
     <span>${isEs ? "Catálogo reciente" : "Recent catalog"}</span>
-    <h2 id="latest-releases-title">${isEs ? "Últimos lanzamientos." : "Latest releases."}</h2>
-    <p>${isEs ? "Portadas, fechas, páginas individuales y enlaces oficiales para los lanzamientos más recientes." : "Artwork, dates, individual release pages, and official links for the newest tracks."}</p>
+    <h2 id="latest-releases-title">${isEs ? "Últimos lanzamientos" : "Latest releases"}</h2>
+    <p>${isEs ? "Empieza por los temas más recientes y abre cada lanzamiento para ver la portada, la fecha y sus enlaces verificados." : "Start with the newest tracks, then open any release for its artwork, date, and verified listening links."}</p>
   </div>
   <div class="release-grid">${cards}</div>
 </section>`;
@@ -1593,7 +1627,7 @@ function releaseDetailSchema(release, detailUrl, description, lang = "en") {
       "@type": "VideoObject",
       "@id": videoId,
       "name": title,
-      "description": release.longDescription || release.description || description,
+      "description": release.longDescription || description,
       "thumbnailUrl": [release.image],
       "uploadDate": `${release.releaseDate}T00:00:00Z`,
       "embedUrl": embedUrl,
@@ -1607,7 +1641,7 @@ function releaseDetailSchema(release, detailUrl, description, lang = "en") {
   };
 }
 
-function setSchema(set, detailUrl) {
+function setSchema(set, detailUrl, lang = "en") {
   const links = cleanLinks(set.links).map(([, url]) => url);
   const schema = {
     "@context": "https://schema.org",
@@ -1619,7 +1653,8 @@ function setSchema(set, detailUrl) {
       "@id": ARTIST_ID,
       "name": "BladesBeats"
     },
-    "url": detailUrl
+    "url": detailUrl,
+    "description": setSummary(set, lang)
   };
   if (Array.isArray(set.genres) && set.genres.length) schema.genre = set.genres;
   if (links.length) schema.sameAs = links;
@@ -1700,19 +1735,19 @@ function buildMusicIndex(releases, generatedReleaseUrls, sets) {
   const spotifyUrl = PLATFORM_LINKS.find(([name]) => name === "Spotify")?.[1] || "";
   const appleUrl = PLATFORM_LINKS.find(([name]) => name === "Apple Music")?.[1] || "";
   return basePage({
-    title: "Music | BladesBeats",
-    description: "Official BladesBeats releases, tracks, remixes, and music platform links.",
+    title: "Music and remixes | BladesBeats",
+    description: "Explore BladesBeats singles, remixes, instrumentals, and DJ sets, with verified links to Spotify, Apple Music, YouTube, and Mixcloud.",
     canonical: `${SITE}/music/`,
     label: "Music",
     h1: "Music",
-    intro: "Official releases, collaborations, and remixes. Available through the verified music and social platforms.",
+    intro: "Explore original releases, remixes, instrumentals, and DJ sets, then listen through verified platform links.",
     activeNav: "music",
     alternates: PAGE_ALTERNATES.music,
     jsonLd: itemList,
     body: `<div class="platform-actions">
-  <a class="button primary" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">Spotify</a>
-  <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">Apple Music</a>
-  <a class="button" href="/dj-sets/">DJ sets</a>
+  <a class="button primary" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">Listen on Spotify</a>
+  <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">Listen on Apple Music</a>
+  <a class="button" href="/dj-sets/">Explore DJ sets</a>
 </div>
 ${releasePreview(releases, "en")}
 ${platformCatalog(releases, sets, "en")}`
@@ -1755,16 +1790,18 @@ function buildReleasePage(release, lang = "en", releases = [release]) {
   const year = itemYear(release);
   const routes = releasePlatformRoutes(release, lang);
   const hasSearchRoutes = routes.some((route) => !route.direct);
+  const formatLabel = releaseTypeLabel(release.type, lang);
+  const publishedDate = formatReleaseDate(release.releaseDate, lang) || year;
   const verb = isYoutubeOnlyRelease(release)
     ? (isEs ? "Ver" : "Watch")
     : (isEs ? "Escuchar" : "Listen to");
-  const description = isEs
-    ? `${verb} ${title} de BladesBeats. Página oficial con ${hasSearchRoutes ? "enlaces directos y búsquedas por título" : "enlaces directos verificados"}${year ? ` para este lanzamiento de ${year}` : ""}.`.slice(0, 155)
-    : `${verb} ${title} by BladesBeats. Official release page with ${hasSearchRoutes ? "direct links and title searches" : "verified direct platform links"}${year ? ` for this ${year} release` : ""}.`.slice(0, 155);
+  const description = compactMetaDescription(isEs
+    ? `${title} de BladesBeats: ${formatLabel}${publishedDate ? ` publicado el ${publishedDate}` : ""}. Escúchalo o míralo mediante enlaces oficiales verificados.`
+    : `${title} by BladesBeats — ${formatLabel}${publishedDate ? ` released ${publishedDate}` : ""}. Listen or watch through verified official links.`);
   const image = release.image || `${SITE}/og-card.png`;
   const socialDimensions = socialImageDimensions(image, { width: 1200, height: 1200 });
   const heroCopy = releaseSummary(release, lang);
-  const publishedDate = formatReleaseDate(release.releaseDate, lang) || year;
+  const coverAlt = isEs ? `Portada de ${title}` : `${title} cover artwork`;
   const directPlatformNames = routes.filter((route) => route.direct).map((route) => labelForLink(route.key));
   const releaseFacts = [
     [isEs ? "Publicado" : "Released", publishedDate],
@@ -1773,10 +1810,10 @@ function buildReleasePage(release, lang = "en", releases = [release]) {
     [isEs ? "Enlaces oficiales" : "Official links", directPlatformNames.join(", ")]
   ].filter(([, value]) => value);
   const platformCopy = isYoutubeOnlyRelease(release)
-    ? (isEs ? `La portada, los datos del lanzamiento y el enlace verificado de YouTube para ${title} están reunidos en esta página.` : `The artwork, release information and verified YouTube link for ${title} are collected on this page.`)
+    ? (isEs ? "Mira la publicación oficial de YouTube y consulta la portada, la fecha y el formato en un solo lugar." : "Watch the official YouTube upload and view the artwork, release date, and format in one place.")
     : hasSearchRoutes
-      ? (isEs ? `La portada, los datos del lanzamiento, los enlaces directos y las búsquedas por título para ${title} están reunidos en esta página.` : `The artwork, release information, direct links and title searches for ${title} are collected on this page.`)
-      : (isEs ? `La portada, los datos del lanzamiento y los enlaces directos verificados para ${title} están reunidos en esta página.` : `The artwork, release information and verified direct platform links for ${title} are collected on this page.`);
+      ? (isEs ? "Usa los enlaces directos disponibles o busca el título exacto en las plataformas compatibles." : "Use the verified direct links where available, or search by the exact title on supported platforms.")
+      : (isEs ? "Abre los enlaces verificados del lanzamiento y consulta su portada, fecha y formato." : "Open the verified platform links for this release and view its artwork, date, and format.");
   const releaseCopy = isEs
     ? platformCopy
     : (release.longDescription || platformCopy);
@@ -1802,7 +1839,7 @@ function buildReleasePage(release, lang = "en", releases = [release]) {
     <div class="release-poster-grid">
       <div class="release-poster-art">
         <span class="release-poster-number">BB / ${String(posterIndex).padStart(2, "0")}</span>
-        <img src="${escapeAttr(image)}"${responsiveImageAttributes(image, "(max-width: 720px) calc(100vw - 64px), (max-width: 1200px) 38vw, 560px")} alt="${escapeAttr(title)} cover artwork" width="800" height="800" loading="eager" decoding="async" fetchpriority="high">
+        <img src="${escapeAttr(image)}"${responsiveImageAttributes(image, "(max-width: 720px) calc(100vw - 64px), (max-width: 1200px) 38vw, 560px")} alt="${escapeAttr(coverAlt)}" width="800" height="800" loading="eager" decoding="async" fetchpriority="high">
       </div>
       <div class="release-poster-copy">
         <p class="release-poster-eyebrow">${escapeHtml(year || (isEs ? "Lanzamiento" : "Release"))} &middot; ${escapeHtml(releaseTypeLabel(release.type, lang))}</p>
@@ -1825,8 +1862,8 @@ function buildReleasePage(release, lang = "en", releases = [release]) {
 <section class="release-editorial" aria-labelledby="release-editorial-title">
   <div class="release-editorial-inner">
     <div>
-      <p class="release-editorial-kicker">${isEs ? "Detalles del lanzamiento" : "Release notes"}</p>
-      <h2 id="release-editorial-title">${isEs ? "Sobre" : "About"} &ldquo;${escapeHtml(title)}&rdquo;</h2>
+      <p class="release-editorial-kicker">${isEs ? "Lanzamiento oficial" : "Official release"}</p>
+      <h2 id="release-editorial-title">${escapeHtml(verb)} &ldquo;${escapeHtml(title)}&rdquo;</h2>
       <p class="release-editorial-copy">${escapeHtml(releaseCopy)}</p>
       ${Array.isArray(release.featuredArtists) && release.featuredArtists.length ? `<p class="release-editorial-meta"><span>${isEs ? "Con" : "With"}</span> ${escapeHtml(release.featuredArtists.join(", "))}</p>` : ""}
     </div>
@@ -1852,7 +1889,7 @@ ${releaseNeighborNav(release, releases, lang)}`;
     socialImage: image,
     socialImageWidth: socialDimensions.width,
     socialImageHeight: socialDimensions.height,
-    socialImageAlt: `${title} cover artwork`,
+    socialImageAlt: coverAlt,
     bodyClass: "release-page",
     showPageHead: false
   });
@@ -1867,14 +1904,14 @@ function buildSetIndex(sets, generatedSetUrls, lang = "en") {
     "itemListElement": sets.map((set, index) => ({
       "@type": "ListItem",
       "position": index + 1,
-      "item": setSchema(set, generatedSetUrls.get(set.slug) || (isEs ? `${SITE}/es/sesiones/` : `${SITE}/dj-sets/`))
+      "item": setSchema(set, generatedSetUrls.get(set.slug) || (isEs ? `${SITE}/es/sesiones/` : `${SITE}/dj-sets/`), lang)
     }))
   };
   const cards = sets.map((set) => {
     const detailUrl = generatedSetUrls.get(set.slug);
     const href = detailUrl ? setDetailPath(set.slug, lang) : set.links?.mixcloud || (isEs ? "/es/sesiones/" : "/dj-sets/");
     const image = set.image || "/og-card.png";
-    const cardCopy = isEs ? "Sesión oficial de BladesBeats publicada en Mixcloud." : set.description;
+    const cardCopy = setSummary(set, lang);
     const coverAlt = isEs ? `${set.title} imagen de portada en Mixcloud` : `${set.title} Mixcloud cover image`;
     return `<article class="release-card">
   <a class="release-card-cover" href="${escapeAttr(href)}">
@@ -1891,19 +1928,19 @@ function buildSetIndex(sets, generatedSetUrls, lang = "en") {
   return basePage({
     title: isEs ? "Sesiones DJ | BladesBeats" : "DJ Sets | BladesBeats",
     description: isEs
-      ? "Sesiones DJ oficiales de BladesBeats en Mixcloud, con páginas individuales y enlaces verificados."
-      : "Official BladesBeats DJ sets on Mixcloud, with individual session pages and verified links.",
+      ? "Escucha sesiones DJ completas de BladesBeats en Mixcloud, con duración, estilos, rankings disponibles y enlaces verificados."
+      : "Listen to full BladesBeats DJ sets on Mixcloud, with durations, styles, available chart history, and verified links.",
     canonical: isEs ? PAGE_ALTERNATES.sets.es : PAGE_ALTERNATES.sets.en,
     label: isEs ? "Sesiones" : "DJ Sets",
     h1: isEs ? "Sesiones DJ" : "DJ Sets",
-    intro: isEs ? "Sesiones oficiales de BladesBeats publicadas en Mixcloud." : "Official BladesBeats DJ sets and Mixcloud sessions.",
+    intro: isEs ? "Sesiones completas de BladesBeats, con enlaces verificados de Mixcloud e historial de rankings cuando está disponible." : "Full BladesBeats sessions, with verified Mixcloud links and chart history where available.",
     activeNav: "sets",
     lang,
     alternates: PAGE_ALTERNATES.sets,
     jsonLd: itemList,
     body: `<div class="platform-actions">
-  <a class="button primary" href="https://www.mixcloud.com/BladesBeats/" target="_blank" rel="noopener noreferrer">Mixcloud</a>
-  <a class="button" href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Música" : "Music releases"}</a>
+  <a class="button primary" href="https://www.mixcloud.com/BladesBeats/" target="_blank" rel="noopener noreferrer">${isEs ? "Escuchar en Mixcloud" : "Listen on Mixcloud"}</a>
+  <a class="button" href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Explorar música" : "Explore music"}</a>
 </div>
 <section class="release-grid">${cards}</section>`
   });
@@ -1912,10 +1949,11 @@ function buildSetIndex(sets, generatedSetUrls, lang = "en") {
 function buildSetPage(set, lang = "en") {
   const isEs = lang === "es";
   const detailUrl = setDetailUrl(set.slug, lang);
-  const description = isEs
-    ? `${set.title} es una sesión DJ oficial de BladesBeats en ${set.platform || "Mixcloud"}.`.slice(0, 155)
-    : `${set.title} is an official BladesBeats DJ set on ${set.platform || "Mixcloud"}.`.slice(0, 155);
+  const description = compactMetaDescription(isEs
+    ? `${set.title}, sesión DJ oficial de BladesBeats en ${set.platform || "Mixcloud"}. Escucha la sesión completa y consulta sus datos verificados.`
+    : `${set.title}, an official BladesBeats DJ set on ${set.platform || "Mixcloud"}. Listen to the full session and view its verified details.`);
   const image = set.image || `${SITE}/og-card.png`;
+  const coverAlt = isEs ? `Portada de ${set.title} en Mixcloud` : `${set.title} Mixcloud cover artwork`;
   const chartHistory = renderMixcloudChartHistory(set, lang);
   const embed = mixcloudEmbedPlaceholder(set, lang);
   const body = `<nav class="breadcrumb" aria-label="Breadcrumb">
@@ -1927,11 +1965,11 @@ function buildSetPage(set, lang = "en") {
 </nav>
 <article class="release-detail">
   <div class="release-detail-cover">
-    <img src="${escapeAttr(image)}" alt="${escapeAttr(set.title)} cover image" width="800" height="800" loading="eager" decoding="async" fetchpriority="high">
+    <img src="${escapeAttr(image)}" alt="${escapeAttr(coverAlt)}" width="800" height="800" loading="eager" decoding="async" fetchpriority="high">
   </div>
   <div class="release-detail-body">
     <p class="page-eyebrow">${escapeHtml(set.uploadDate || set.publishedDate || "Mixcloud")} &middot; ${escapeHtml(set.duration || (isEs ? "Sesión DJ" : "DJ set"))}</p>
-    <p class="release-detail-text">${escapeHtml(isEs ? "Sesión oficial de BladesBeats publicada en Mixcloud." : (set.longDescription || set.description))}</p>
+    <p class="release-detail-text">${escapeHtml(isEs ? setSummary(set, lang) : (set.longDescription || setSummary(set, lang)))}</p>
     ${chartHistory}
     ${embed}
     <div class="release-detail-platforms">${detailPlatformLinks(set.links)}</div>
@@ -1939,16 +1977,16 @@ function buildSetPage(set, lang = "en") {
   </div>
 </article>`;
   return basePage({
-    title: isEs ? `${escapeHtml(set.title)} | Sesión DJ de BladesBeats` : `${escapeHtml(set.title)} | BladesBeats DJ Set`,
+    title: compactReleasePageTitle(`${set.title} — ${isEs ? "sesión DJ" : "DJ set"}`),
     description,
     canonical: detailUrl,
     label: isEs ? "Sesión DJ" : "DJ Set",
     h1: set.title,
-    intro: isEs ? "Página oficial de sesión DJ de BladesBeats." : "Official BladesBeats DJ set page.",
+    intro: isEs ? "Escucha la sesión completa en Mixcloud y consulta sus datos verificados." : "Listen to the full session on Mixcloud and view its verified details.",
     activeNav: "sets",
     lang,
     alternates: { en: setDetailUrl(set.slug, "en"), es: setDetailUrl(set.slug, "es") },
-    jsonLd: setSchema(set, detailUrl),
+    jsonLd: setSchema(set, detailUrl, lang),
     body
   });
 }
@@ -2220,8 +2258,8 @@ function contactBody(lang) {
 function contactBodyDesign(lang) {
   const isEs = lang === "es";
   const t = isEs ? {
-    title: "Contacto para bolos.",
-    detail: "BladesBeats está basado en Sevilla y puede responder a consultas de contratación DJ, colaboraciones musicales y contacto directo en inglés o español.",
+    title: "Cuéntame lo esencial",
+    detail: "Comparte la fecha, la ciudad, la sala, la duración del set y el presupuesto si ya los conoces. También puedes enviar consultas sobre colaboraciones o derechos.",
     languages: "Idiomas",
     base: "Base",
     baseValue: "Sevilla, España",
@@ -2229,16 +2267,16 @@ function contactBodyDesign(lang) {
     namePh: "Tu nombre",
     email: "Email",
     date: "Fecha del evento",
-    type: "Tipo",
+    type: "Motivo de contacto",
     message: "Mensaje",
-    messagePh: "Cuéntame sobre tu evento, fecha y ciudad...",
-    send: "Enviar mensaje",
+    messagePh: "Añade el contexto que necesito para responder",
+    send: "Enviar consulta",
     sending: "Enviando...",
-    success: "Mensaje enviado. Te responderé pronto.",
-    mailto: "Abriendo tu app de correo con todo rellenado — solo dale a enviar.",
+    success: "Consulta enviada. Te responderé en cuanto pueda.",
+    mailto: "Se abrirá tu aplicación de correo con la consulta preparada. Solo tienes que enviarla.",
     error: "Algo salió mal. Inténtalo de nuevo o escríbeme por Instagram.",
     captcha: "Por favor completa la verificación antes de enviar.",
-    booking: "Bolo DJ",
+    booking: "Contratación DJ",
     mixing: "Mezcla y mastering",
     courses: "Formación DJ",
     collab: "Colaboración",
@@ -2246,16 +2284,16 @@ function contactBodyDesign(lang) {
     gdpr: "Solicitud RGPD",
     other: "Otro",
     city: "Ciudad / sala",
-    cityPh: "¿Dónde es el evento?",
+    cityPh: "Ciudad y sala, si está confirmada",
     eventType: "Tipo de evento",
     eventTypes: ["Noche de club", "Festival", "Evento privado", "Evento de empresa / marca", "Bar / lounge", "Otro"],
     setLength: "Duración del set",
-    setLengthPh: "p.ej. 2 horas",
+    setLengthPh: "Por ejemplo, 2 horas",
     startTime: "Hora de inicio",
     audience: "Público estimado",
-    audiencePh: "p.ej. 300",
+    audiencePh: "Por ejemplo, 300",
     budget: "Presupuesto (opcional)",
-    budgetPh: "Tu rango de presupuesto",
+    budgetPh: "Rango aproximado",
     artist: "Tu nombre de artista / proyecto",
     artistPh: "Cómo publicas tu música",
     mmLabel: "Baster Beats / Sevilla",
@@ -2309,8 +2347,8 @@ function contactBodyDesign(lang) {
     securityNote: "Protegido por Cloudflare Turnstile. BladesBeats no consulta ni muestra tu dirección IP mediante un servicio del navegador; Cloudflare puede tratar datos técnicos para la seguridad.",
     privacyLink: "Leer la política de privacidad"
   } : {
-    title: "Book BladesBeats.",
-    detail: "BladesBeats is based in Sevilla and can respond to DJ booking inquiries, music collaborations, and direct artist contact in English or Spanish.",
+    title: "Share the essentials",
+    detail: "Add the date, city, venue, set length, and budget if you know them. You can also use this form for collaborations or rights requests.",
     languages: "Languages",
     base: "Base",
     baseValue: "Sevilla, Spain",
@@ -2318,13 +2356,13 @@ function contactBodyDesign(lang) {
     namePh: "Your name",
     email: "Email",
     date: "Event date",
-    type: "Type",
+    type: "What can I help with?",
     message: "Message",
-    messagePh: "Tell me about your event, date, and city...",
-    send: "Send message",
+    messagePh: "Add the context I need to respond",
+    send: "Send inquiry",
     sending: "Sending...",
     success: "Message sent. I will get back to you.",
-    mailto: "Opening your email app with everything pre-filled — just press send.",
+    mailto: "Your email app will open with the inquiry prepared. Review it, then press send.",
     error: "Something went wrong. Please try again, or reach me on Instagram.",
     captcha: "Please complete the verification below before sending.",
     booking: "DJ booking",
@@ -2335,16 +2373,16 @@ function contactBodyDesign(lang) {
     gdpr: "GDPR request",
     other: "Other",
     city: "City / venue",
-    cityPh: "Where is the event?",
+    cityPh: "City and venue, if confirmed",
     eventType: "Event type",
     eventTypes: ["Club night", "Festival", "Private event", "Corporate / brand event", "Bar / lounge", "Other"],
     setLength: "Set length",
-    setLengthPh: "e.g. 2 hours",
+    setLengthPh: "For example, 2 hours",
     startTime: "Start time",
     audience: "Expected audience",
-    audiencePh: "e.g. 300",
+    audiencePh: "For example, 300",
     budget: "Budget (optional)",
-    budgetPh: "Your budget range",
+    budgetPh: "Approximate range",
     artist: "Your artist / project name",
     artistPh: "How you release music",
     mmLabel: "Baster Beats / Sevilla",
@@ -2440,17 +2478,17 @@ function buildBookingPage(lang = "en") {
   const isEs = lang === "es";
   const canonical = isEs ? PAGE_ALTERNATES.booking.es : PAGE_ALTERNATES.booking.en;
   const description = isEs
-    ? "Contratación DJ en Sevilla para BladesBeats. Contacto directo por Instagram para bolos, remixes, colaboraciones y mensajes."
-    : "DJ booking inquiries for BladesBeats in Sevilla. Contact directly on Instagram for bookings, remixes, collaborations, and messages.";
+    ? "Consulta la disponibilidad de BladesBeats para clubes, festivales, eventos privados y colaboraciones. Formulario de contacto en español e inglés."
+    : "Check BladesBeats availability for club nights, festivals, private events, and collaborations. Contact form available in English and Spanish.";
   return basePage({
-    title: isEs ? "Contratar DJ en Sevilla | BladesBeats" : "DJ Bookings in Sevilla | BladesBeats",
+    title: isEs ? "Contratar a BladesBeats | DJ en Sevilla" : "Book BladesBeats | DJ in Sevilla",
     description,
     canonical,
     label: isEs ? "Contacto" : "Contact",
-    h1: isEs ? "Contratar DJ en Sevilla" : "DJ bookings in Sevilla",
+    h1: isEs ? "Contratar a BladesBeats" : "Book BladesBeats",
     intro: isEs
-      ? "Para contratación DJ, bolos, remixes, colaboraciones o mensajes directos, contacta con BladesBeats en Instagram."
-      : "For DJ bookings, remixes, collaborations, or direct messages, contact BladesBeats on Instagram.",
+      ? "¿Organizas una noche de club, un festival, un evento privado o una colaboración? Comparte los datos esenciales para empezar."
+      : "Planning a club night, festival, private event, or collaboration? Share the essential details to get started.",
     activeNav: "booking",
     lang,
     alternates: PAGE_ALTERNATES.booking,
@@ -2527,60 +2565,60 @@ function buildAboutPageDesign(lang = "en") {
   const isEs = lang === "es";
   const canonical = isEs ? PAGE_ALTERNATES.about.es : PAGE_ALTERNATES.about.en;
   const description = isEs
-    ? "Historia de BladesBeats: DJ y productor con raíces en Oslo y base actual en Sevilla."
-    : "About BladesBeats: Norwegian-born DJ and producer with Oslo roots and a current base in Sevilla.";
+    ? "Conoce la historia de BladesBeats, DJ y productor noruego basado en Sevilla, desde sus comienzos en Oslo hasta su trabajo actual."
+    : "Meet BladesBeats, a Norwegian DJ and producer based in Sevilla, from his early music work in Oslo to his current club-focused direction.";
   const bio = isEs ? {
     label: "Sobre mí",
     h1: "Sobre BladesBeats",
-    intro: "Raíces en Oslo, base en Sevilla y una dirección electrónica orientada al club.",
+    intro: "De los espacios musicales comunitarios de Oslo a la producción y las cabinas de Sevilla.",
     title: "Detrás de BladesBeats",
     base: "Sevilla, España",
     factOrigin: "Origen",
     factBase: "Base actual",
     factLang: "Idiomas",
-    lead: "BladesBeats es un DJ y productor noruego basado en Sevilla, España.",
-    p2: "La música empezó en Oslo a principios de la década de 2010, a través de espacios juveniles y comunitarios alrededor de Holmlia. BUSH y Café Condio le dieron acceso temprano a equipo de estudio, gente haciendo música y la primera oportunidad real de producir. Sin esos espacios, probablemente el proyecto no existiría.",
-    p3: "Después de mudarse a Sevilla en 2017, la música desapareció de su vida durante varios años. Volvió más tarde casi por accidente, primero con beatmaking y sesiones con vocalistas, y después con un movimiento más claro hacia la música electrónica.",
-    p4: "Ese cambio llevó al trabajo de producción con <a href=\"https://basterbeats.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Manuel Ávila / Baster Beats</a> en Sevilla, desarrollando temas originales y remixes mediante trabajo regular de estudio.",
-    p5: "La parte DJ llegó después, con formación junto a <a href=\"https://impulsamusiccenter.es/quini-rivera/\" target=\"_blank\" rel=\"noopener noreferrer\">Quini Rivera</a> en Impulsa Music Center en 2025, conectando producción, técnica, transiciones y energía de sala.",
-    p6: "Hoy BladesBeats trabaja entre producción de estudio, sesiones DJ y bolos, con un sonido enfocado al club construido alrededor de energía, movimiento y la sala.",
-    p7: "Raíces noruegas, base en Sevilla, inglés y español. Para contratación o contacto directo, Instagram es la vía principal.",
+    lead: "BladesBeats es un DJ y productor noruego que crea música electrónica orientada al club desde Sevilla.",
+    p2: "El proyecto empezó en Oslo a principios de la década de 2010. Los espacios juveniles y comunitarios de Holmlia, entre ellos BUSH y Café Condio, le dieron acceso a equipo de estudio, a otras personas que hacían música y a su primera oportunidad real de producir.",
+    p3: "Tras mudarse a Sevilla en 2017, se alejó de la música durante varios años. El beatmaking y las sesiones con vocalistas marcaron el regreso, seguidos por un giro más claro hacia la música electrónica.",
+    p4: "El trabajo regular de estudio con <a href=\"https://basterbeats.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Manuel Ávila / Baster Beats</a> ayudó a convertir ese giro en temas originales y remixes.",
+    p5: "En 2025, la formación DJ con <a href=\"https://impulsamusiccenter.es/quini-rivera/\" target=\"_blank\" rel=\"noopener noreferrer\">Quini Rivera</a> en Impulsa Music Center conectó el trabajo de estudio con la técnica, las transiciones y la lectura de la sala.",
+    p6: "Hoy BladesBeats combina producción, sesiones DJ y bolos, con música de club construida alrededor de la energía y el movimiento.",
+    p7: "Con base en Sevilla, atiende consultas en inglés y español. Para bolos y colaboraciones, utiliza la <a href=\"/es/contratar-dj-sevilla/\">página de contacto</a>.",
     timeline: [
-      ["Origen", "Oslo", "Originario de Oslo, Noruega, donde empezó a experimentar con producción musical a principios de la década de 2010."],
-      ["2017", "Sevilla", "Se mudó a Sevilla, España, donde la música siguió con él y más tarde tomó una dirección más fuerte."],
-      ["2023", "Enfoque de producción", "El perfil artístico de BladesBeats se volvió más enfocado a través del trabajo de producción con Manuel Ávila / Baster Beats."],
-      ["2025", "Impulsa", "La formación DJ con Quini Rivera en Impulsa Music Center conectó la parte de producción y la parte DJ del perfil."]
+      ["Origen", "Oslo", "El proyecto nació en los espacios musicales juveniles y comunitarios de Holmlia a principios de la década de 2010."],
+      ["2017", "Sevilla", "El traslado a Sevilla abrió el siguiente capítulo del proyecto."],
+      ["2023", "Producción", "El trabajo con Manuel Ávila / Baster Beats dio más foco a los temas originales y los remixes."],
+      ["2025", "Cabina", "La formación con Quini Rivera en Impulsa Music Center conectó la producción con la técnica DJ y la lectura de la sala."]
     ],
     sideLabel: "Catálogo oficial",
     sideTitle: "Música de BladesBeats",
-    sideCopy: "Lanzamientos, remixes y sesiones oficiales.",
+    sideCopy: "Singles, remixes, instrumentales y sesiones DJ reunidos en un solo catálogo.",
     sideLink: "Explorar la música",
     sideHref: "/es/musica/"
   } : {
     label: "About",
     h1: "About BladesBeats",
-    intro: "Oslo roots, Sevilla base, and an electronic club-focused direction.",
+    intro: "From Oslo community music spaces to production studios and DJ booths in Sevilla.",
     title: "Behind BladesBeats",
     base: "Sevilla, Spain",
     factOrigin: "Origin",
     factBase: "Current base",
     factLang: "Languages",
-    lead: "BladesBeats is a Norwegian DJ and producer based in Sevilla, Spain.",
-    p2: "The music started in Oslo in the early 2010s, through youth and community spaces around Holmlia. BUSH and Café Condio gave him early access to studio equipment, music people, and the first real chance to produce. Without those rooms, the project probably would not exist.",
-    p3: "After moving to Sevilla in 2017, music disappeared from his life for several years. It came back later almost by accident, first through beatmaking and vocal sessions, then through a stronger move into electronic music.",
-    p4: "That shift led to production work with <a href=\"https://basterbeats.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Manuel Ávila / Baster Beats</a> in Sevilla, developing original tracks and remixes through regular studio work.",
-    p5: "The DJ side came later, with training from <a href=\"https://impulsamusiccenter.es/quini-rivera/\" target=\"_blank\" rel=\"noopener noreferrer\">Quini Rivera</a> at Impulsa Music Center in 2025, connecting production, technique, transitions, and room energy.",
-    p6: "Today BladesBeats works across studio production, DJ sets, and live gigs, with a club-focused sound built around energy, movement, and the room.",
-    p7: "Norwegian roots, Sevilla base, English and Spanish. For booking or direct contact, Instagram is the main route.",
+    lead: "BladesBeats is a Norwegian DJ and producer creating club-focused electronic music from Sevilla.",
+    p2: "The project began in Oslo in the early 2010s. Youth and community spaces around Holmlia—including BUSH and Café Condio—provided studio access, a creative community, and the first real chance to produce.",
+    p3: "After moving to Sevilla in 2017, he stepped away from music for several years. Beatmaking and sessions with vocalists brought him back, followed by a clearer shift toward electronic music.",
+    p4: "Regular studio work with <a href=\"https://basterbeats.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Manuel Ávila / Baster Beats</a> helped turn that shift into original tracks and remixes.",
+    p5: "In 2025, DJ training with <a href=\"https://impulsamusiccenter.es/quini-rivera/\" target=\"_blank\" rel=\"noopener noreferrer\">Quini Rivera</a> at Impulsa Music Center connected the studio work with technique, transitions, and reading a room.",
+    p6: "Today, BladesBeats moves between production, DJ sets, and gigs, building club-focused music around energy and movement.",
+    p7: "Based in Sevilla, he handles inquiries in English and Spanish. For gigs and collaborations, use the <a href=\"/booking/\">contact page</a>.",
     timeline: [
-      ["Origin", "Oslo", "Originally from Oslo, Norway, where he began experimenting with music production in the early 2010s."],
-      ["2017", "Sevilla", "Moved to Sevilla, Spain, where the music stayed with him and later developed into a stronger direction."],
-      ["2023", "Production focus", "The BladesBeats artist profile became more focused through production work with Manuel Ávila / Baster Beats."],
-      ["2025", "Impulsa", "DJ training with Quini Rivera at Impulsa Music Center connected the production and DJ sides of the profile."]
+      ["Origin", "Oslo", "The project began in Holmlia's youth and community music spaces in the early 2010s."],
+      ["2017", "Sevilla", "A move to Sevilla opened the project's next chapter."],
+      ["2023", "Production", "Work with Manuel Ávila / Baster Beats brought more focus to original tracks and remixes."],
+      ["2025", "DJ booth", "Training with Quini Rivera at Impulsa Music Center connected production with DJ technique and reading a room."]
     ],
     sideLabel: "Official catalog",
     sideTitle: "BladesBeats music",
-    sideCopy: "Official releases, remixes, and DJ sets.",
+    sideCopy: "Singles, remixes, instrumentals, and DJ sets in one catalog.",
     sideLink: "Explore the music",
     sideHref: "/music/"
   };
@@ -2604,7 +2642,7 @@ function buildAboutPageDesign(lang = "en") {
         <p>${bio.p4}</p>
         <p>${bio.p5}</p>
         <p>${escapeHtml(bio.p6)}</p>
-        <p>${escapeHtml(bio.p7)}</p>
+        <p>${bio.p7}</p>
       </div>
     </article>
   </div>
@@ -2619,7 +2657,7 @@ function buildAboutPageDesign(lang = "en") {
   </div>
 </div>`;
   return basePage({
-    title: isEs ? "Sobre BladesBeats | DJ y productor en Sevilla" : "About BladesBeats | DJ and Producer in Sevilla",
+    title: isEs ? "Sobre BladesBeats | DJ y productor en Sevilla" : "About BladesBeats | DJ and producer in Sevilla",
     description,
     canonical,
     label: bio.label,
@@ -2637,13 +2675,13 @@ function appearanceCard(lang = "en", href = "/#appearances") {
   const isEs = lang === "es";
   return `<div class="appearances-grid">
   <a class="appearance-card" href="${escapeAttr(href)}">
-    <div class="appearance-mark"><img class="appearance-logo" src="/gigs/expoestepona/expotattoo-estepona-logo-wide.jpg" alt="ExpoTattoo Estepona 2026 logo - BladesBeats DJ appearance in Estepona" width="1427" height="975" loading="lazy" decoding="async"></div>
+    <div class="appearance-mark"><img class="appearance-logo" src="/gigs/expoestepona/expotattoo-estepona-logo-wide.jpg" alt="${isEs ? "Logotipo de ExpoTattoo Estepona 2026 para la actuación de BladesBeats" : "ExpoTattoo Estepona 2026 logo for the BladesBeats appearance"}" width="1427" height="975" loading="lazy" decoding="async"></div>
     <div>
-      <span class="appearance-label">${isEs ? "Actuaciones anteriores" : "Past appearances"}</span>
+       <span class="appearance-label">${isEs ? "Actuación anterior" : "Past appearance"}</span>
       <span class="appearance-title">ExpoTattoo Estepona</span>
       <p class="appearance-meta">2026</p>
       <p class="appearance-summary">${isEs ? "Aparición DJ en Estepona, Andalucía." : "DJ appearance in Estepona, Andalucía."}</p>
-      <span class="appearance-link">${isEs ? "Detalles" : "Details"}</span>
+       <span class="appearance-link">${isEs ? "Ver actuación" : "View appearance"}</span>
     </div>
   </a>
 </div>`;
@@ -2657,36 +2695,36 @@ function buildGigsIndexPage(gigs, lang = "en") {
   const isEs = lang === "es";
   const canonical = isEs ? PAGE_ALTERNATES.gigs.es : PAGE_ALTERNATES.gigs.en;
   const description = isEs
-    ? "Bolos y actuaciones anteriores de BladesBeats, DJ y productor basado en Sevilla."
-    : "Past gigs and appearances for BladesBeats, DJ and producer based in Sevilla.";
+    ? "Consulta las actuaciones anteriores de BladesBeats y contacta para clubes, festivales, eventos privados y colaboraciones."
+    : "Explore past BladesBeats appearances and get in touch about club nights, festivals, private events, and collaborations.";
   const cards = gigs.map((gig, index) => {
     const href = gigDetailPath(gig.slug, lang);
     return `<a class="appearance-card${index === 0 ? " featured" : ""}" href="${escapeAttr(href)}">
-    <div class="appearance-mark"><img class="appearance-logo" src="${escapeAttr(gig.logoImage || "/og-card.png")}" alt="${escapeAttr(gig.title)} logo" width="1427" height="975" loading="lazy" decoding="async"></div>
+    <div class="appearance-mark"><img class="appearance-logo" src="${escapeAttr(gig.logoImage || "/og-card.png")}" alt="${escapeAttr(isEs ? `Logotipo de ${gig.title}` : `${gig.title} logo`)}" width="1427" height="975" loading="lazy" decoding="async"></div>
     <div class="appearance-body">
-      <span class="appearance-label">${isEs ? "Bolos" : "Gigs"}</span>
+      <span class="appearance-label">${isEs ? "Actuación" : "Appearance"}</span>
       <span class="appearance-title">${escapeHtml(gig.title)}</span>
       <p class="appearance-meta">${escapeHtml(String(gig.year || gig.startDate?.slice(0, 4) || ""))}${gig.city ? ` · ${escapeHtml(gig.city)}` : ""}</p>
       <p class="appearance-summary">${escapeHtml(gigSummary(gig, isEs))}</p>
-      <span class="appearance-link">${isEs ? "Detalles" : "Details"}</span>
+      <span class="appearance-link">${isEs ? "Ver actuación" : "View appearance"}</span>
     </div>
   </a>`;
   });
   const featured = cards[0] || "";
   const remaining = cards.slice(1).join("\n");
   const bookingPanel = `<aside class="gigs-booking-panel">
-    <span>${isEs ? "Disponible para contratación" : "Available for bookings"}</span>
-    <h2>${isEs ? "Lleva BladesBeats a tu evento." : "Bring BladesBeats to your event."}</h2>
-    <p>${isEs ? "Consultas para clubes, eventos, colaboraciones y sesiones DJ en Sevilla y otros destinos." : "Club nights, events, collaborations, and DJ booking inquiries in Sevilla and beyond."}</p>
-    <a class="button primary" href="${isEs ? "/es/contratar-dj-sevilla/" : "/booking/"}">${isEs ? "Consultar disponibilidad" : "Check availability"}</a>
+    <span>${isEs ? "Contratación DJ" : "DJ bookings"}</span>
+    <h2>${isEs ? "¿Estás preparando un evento?" : "Planning an event?"}</h2>
+    <p>${isEs ? "Comparte la fecha, la ciudad, la sala y el formato del evento para consultar la disponibilidad de BladesBeats." : "Share the date, city, venue, and event format to check BladesBeats availability."}</p>
+    <a class="button primary" href="${isEs ? "/es/contratar-dj-sevilla/" : "/booking/"}">${isEs ? "Iniciar una consulta" : "Start an inquiry"}</a>
   </aside>`;
   return basePage({
-    title: isEs ? "Bolos y eventos | BladesBeats" : "Gigs | BladesBeats",
+    title: isEs ? "Actuaciones y contratación | BladesBeats" : "Live appearances and bookings | BladesBeats",
     description,
     canonical,
     label: isEs ? "Bolos" : "Gigs",
-    h1: isEs ? "Actuaciones anteriores." : "Past appearances.",
-    intro: isEs ? "Un registro en crecimiento de lugares donde BladesBeats ha tocado." : "A growing record of places BladesBeats has played.",
+    h1: isEs ? "Actuaciones anteriores" : "Past appearances",
+    intro: isEs ? "Un archivo en crecimiento de bolos y apariciones de BladesBeats, con información verificada de cada evento." : "A growing archive of BladesBeats gigs and event appearances, with verified details for each one.",
     activeNav: "gigs",
     lang,
     alternates: PAGE_ALTERNATES.gigs,
@@ -2708,9 +2746,9 @@ ${remaining ? `<section class="appearances-grid">${remaining}</section>` : ""}`
 function buildGigDetailPage(gig, lang = "en") {
   const isEs = lang === "es";
   const detailUrl = gigDetailUrl(gig.slug, lang);
-  const description = isEs
-    ? `${gig.title} ${gig.year || ""} bolo de BladesBeats en ${gig.city || "España"}.`.slice(0, 155)
-    : `${gig.title} ${gig.year || ""} appearance for BladesBeats in ${gig.city || "Spain"}.`.slice(0, 155);
+  const description = compactMetaDescription(isEs
+    ? `${gig.title} ${gig.year || ""}: actuación de BladesBeats en ${gig.city || "España"}. Consulta fechas, lugar, colaboradores y contexto del evento.`
+    : `${gig.title} ${gig.year || ""}: a BladesBeats appearance in ${gig.city || "Spain"}. View dates, venue, partners, and event context.`);
   const partnerLinks = Array.isArray(gig.partners)
     ? gig.partners.map((partner) => `<li><a href="${escapeAttr(partner.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(partner.name)}</a></li>`).join("")
     : "";
@@ -2723,7 +2761,7 @@ function buildGigDetailPage(gig, lang = "en") {
 </nav>
 <article class="release-detail">
   <div class="release-detail-cover">
-    <img src="${escapeAttr(gig.logoImage || "/og-card.png")}" alt="${escapeAttr(gig.title)} logo" width="800" height="548" loading="eager" decoding="async">
+    <img src="${escapeAttr(gig.logoImage || "/og-card.png")}" alt="${escapeAttr(isEs ? `Logotipo de ${gig.title}` : `${gig.title} logo`)}" width="800" height="548" loading="eager" decoding="async">
   </div>
   <div class="release-detail-body">
     <dl class="gig-facts">
@@ -2735,12 +2773,12 @@ function buildGigDetailPage(gig, lang = "en") {
     <p class="release-detail-text">${escapeHtml(isEs ? (gig.bodyEs || gig.summaryEs || gig.body || gig.summary || "") : (gig.body || gig.summary || ""))}</p>
     ${gig.cause ? `<p class="release-detail-meta gig-cause">${escapeHtml(isEs ? (gig.causeEs || gig.cause) : gig.cause)}</p>` : ""}
     ${partnerLinks ? `<ul class="release-card-platforms">${partnerLinks}</ul>` : ""}
-    <div class="release-detail-platforms"><a href="${isEs ? "/es/contratar-dj-sevilla/" : "/booking/"}">${isEs ? "Contacto para bolos" : "Contact for bookings"} <span aria-hidden="true">&rarr;</span></a></div>
+    <div class="release-detail-platforms"><a href="${isEs ? "/es/contratar-dj-sevilla/" : "/booking/"}">${isEs ? "Consultar una contratación" : "Start a booking inquiry"} <span aria-hidden="true">&rarr;</span></a></div>
     <p><a class="back-link" href="${isEs ? "/es/eventos/" : "/gigs/"}">&larr; ${isEs ? "Volver a bolos" : "Back to gigs"}</a></p>
   </div>
 </article>`;
   return basePage({
-    title: isEs ? `${escapeHtml(gig.title)} ${gig.year || ""} | BladesBeats bolo` : `${escapeHtml(gig.title)} ${gig.year || ""} | BladesBeats`,
+    title: compactReleasePageTitle(`${gig.title} ${gig.year || ""} — ${isEs ? "actuación" : "appearance"}`.trim()),
     description,
     canonical: detailUrl,
     label: isEs ? "Bolos" : "Gigs",
@@ -2767,12 +2805,12 @@ const SPANISH_HOMEPAGE_COPY = {
   nav_appearances: "Bolos",
   nav_story: "Sobre mí",
   nav_booking: "Contacto",
-  home_hero_eyebrow: "Oslo &middot; Sevilla &middot; <b>2017-actualidad</b>",
-  home_hero_subtitle: "DJ y productor basado en Sevilla, con raíces en Oslo y un catálogo en crecimiento de lanzamientos, sesiones y bolos.",
+  home_hero_eyebrow: "Raíces en Oslo &middot; Base en Sevilla &middot; <b>Desde 2017</b>",
+  home_hero_subtitle: "Música electrónica orientada al club, lanzamientos originales, remixes y sesiones DJ entre Oslo y Sevilla.",
   home_hero_cta: "Escucha el último lanzamiento &nearr;",
-  home_feature_label: "Nuevo lanzamiento",
-  home_feature_action: "Escuchar &nearr;",
-  home_latest_label: "Últimos del catálogo",
+  home_feature_label: "Último lanzamiento",
+  home_feature_action: "Abrir lanzamiento &nearr;",
+  home_latest_label: "Novedades de BladesBeats",
   home_latest_release: "Último lanzamiento",
   home_latest_set: "Última sesión",
   catalog_count_release_one: "lanzamiento",
@@ -2787,13 +2825,13 @@ const SPANISH_HOMEPAGE_COPY = {
   catalog_legend_releases: "Lanzamientos",
   catalog_legend_sets: "Sesiones",
   catalog_legend_gigs: "Bolos",
-  catalog_mobile_note: "Mostrando la actividad reciente en móvil.",
-  catalog_mobile_link: "Abrir el catálogo completo",
-  footer_tagline: "DJ y productor basado en Sevilla, España. Originario de Oslo, Noruega.",
+  catalog_mobile_note: "En móvil se muestra la actividad reciente.",
+  catalog_mobile_link: "Explorar el catálogo musical completo",
+  footer_tagline: "DJ y productor noruego basado en Sevilla, centrado en música electrónica para club.",
   footer_listen: "Escuchar",
-  footer_connect: "Conectar",
+  footer_connect: "Redes y contacto",
   footer_booking: "Contacto",
-  footer_site: "Sitio",
+  footer_site: "Explorar",
   footer_music: "Música",
   footer_sets: "Sesiones",
   footer_gigs: "Bolos",
@@ -2811,16 +2849,18 @@ function buildSpanishHomePage() {
   });
   html = html
     .replace('<html lang="en">', '<html lang="es">')
-    .replace("<title>BladesBeats | DJ &amp; Producer &middot; Sevilla</title>", "<title>BladesBeats | DJ y productor en Sevilla</title>")
-    .replace('<meta name="description" content="BladesBeats is a Norwegian-born DJ and producer based in Sevilla, Spain, focused on electronic music, DJ sets, and original music production.">', '<meta name="description" content="BladesBeats es un DJ y productor nacido en Noruega y basado en Sevilla, España, enfocado en música electrónica, sesiones DJ y producción original.">')
+    .replace("<title>BladesBeats | DJ &amp; Producer in Sevilla</title>", "<title>BladesBeats | DJ y productor en Sevilla</title>")
+    .replace('<meta name="description" content="BladesBeats is a Norwegian DJ and producer based in Sevilla, creating club-focused electronic music, original releases, remixes, and DJ sets.">', '<meta name="description" content="BladesBeats es un DJ y productor noruego basado en Sevilla que crea música electrónica orientada al club, lanzamientos, remixes y sesiones DJ.">')
     .replace('<link rel="canonical" href="https://bladesbeats.com/">', '<link rel="canonical" href="https://bladesbeats.com/es/">')
-    .replace('<meta property="og:title" content="BladesBeats | DJ &amp; Producer &middot; Sevilla">', '<meta property="og:title" content="BladesBeats | DJ y productor en Sevilla">')
-    .replace('<meta property="og:description" content="Norwegian-born DJ and producer based in Sevilla, Spain.">', '<meta property="og:description" content="DJ y productor nacido en Noruega y basado en Sevilla, España.">')
+    .replace('<meta property="og:title" content="BladesBeats | DJ &amp; Producer in Sevilla">', '<meta property="og:title" content="BladesBeats | DJ y productor en Sevilla">')
+    .replace('<meta property="og:description" content="Norwegian DJ and producer creating club-focused electronic music from Sevilla.">', '<meta property="og:description" content="DJ y productor noruego que crea música electrónica orientada al club desde Sevilla.">')
     .replace('<meta property="og:url" content="https://bladesbeats.com/">', '<meta property="og:url" content="https://bladesbeats.com/es/">')
     .replace('<meta property="og:locale" content="en_US">', '<meta property="og:locale" content="es_ES">')
     .replace('<meta property="og:locale:alternate" content="es_ES">', '<meta property="og:locale:alternate" content="en_US">')
-    .replace('<meta name="twitter:title" content="BladesBeats | DJ &amp; Producer &middot; Sevilla">', '<meta name="twitter:title" content="BladesBeats | DJ y productor en Sevilla">')
-    .replace('<meta name="twitter:description" content="Norwegian-born DJ and producer based in Sevilla, Spain.">', '<meta name="twitter:description" content="DJ y productor nacido en Noruega y basado en Sevilla, España.">')
+    .replace('<meta name="twitter:title" content="BladesBeats | DJ &amp; Producer in Sevilla">', '<meta name="twitter:title" content="BladesBeats | DJ y productor en Sevilla">')
+    .replace('<meta name="twitter:description" content="Norwegian DJ and producer creating club-focused electronic music from Sevilla.">', '<meta name="twitter:description" content="DJ y productor noruego que crea música electrónica orientada al club desde Sevilla.">')
+    .replaceAll('"description": "Norwegian DJ and producer based in Sevilla, creating club-focused electronic music, original releases, remixes, and DJ sets."', '"description": "DJ y productor noruego basado en Sevilla, con música electrónica orientada al club, lanzamientos, remixes y sesiones DJ."')
+    .replace('"description": "Official music, DJ sets, artist story, live appearances, and booking contact for BladesBeats."', '"description": "Música, sesiones DJ, historia, actuaciones y contacto para contratar a BladesBeats."')
     .replaceAll('href="/music/"', 'href="/es/musica/"')
     .replaceAll('href="/dj-sets/"', 'href="/es/sesiones/"')
     .replaceAll('href="/gigs/"', 'href="/es/eventos/"')
@@ -2836,6 +2876,16 @@ function buildSpanishHomePage() {
     .replaceAll('href="/legal-notice/"', 'href="/aviso-legal/"')
     .replaceAll('href="/privacy-policy/"', 'href="/politica-privacidad/"')
     .replaceAll('href="/cookie-policy/"', 'href="/politica-cookies/"')
+    .replace('aria-label="BladesBeats home"', 'aria-label="Inicio de BladesBeats"')
+    .replace('aria-label="Primary navigation"', 'aria-label="Navegación principal"')
+    .replace(/alt="([^"]+) cover artwork"/, 'alt="Portada de $1"')
+    .replace('aria-label="Latest catalogue highlights"', 'aria-label="Novedades del catálogo"')
+    .replaceAll('aria-label="Latest release:', 'aria-label="Último lanzamiento:')
+    .replaceAll('aria-label="Latest set:', 'aria-label="Última sesión:')
+    .replace('aria-label="Catalogue timeline visualisation"', 'aria-label="Visualización cronológica del catálogo"')
+    .replace('aria-label="Interactive catalogue entries"', 'aria-label="Entradas interactivas del catálogo"')
+    .replace('aria-label="Close catalogue card"', 'aria-label="Cerrar ficha del catálogo"')
+    .replace('aria-label="Timeline legend"', 'aria-label="Leyenda de la línea temporal"')
     .replace(
       '<a class="site-nav-lang" href="/es/" hreflang="es" lang="es" aria-label="Ver sitio en español">EN / ES</a>',
       '<a class="site-nav-lang" href="/" hreflang="en" lang="en" aria-label="View site in English">ES / EN</a>'
@@ -2857,20 +2907,20 @@ function buildSpanishMusicPage(releases, generatedReleaseUrls, sets) {
   const spotifyUrl = PLATFORM_LINKS.find(([name]) => name === "Spotify")?.[1] || "";
   const appleUrl = PLATFORM_LINKS.find(([name]) => name === "Apple Music")?.[1] || "";
   return basePage({
-    title: "Música | BladesBeats",
-    description: "Música, lanzamientos y plataformas oficiales de BladesBeats.",
+    title: "Música y remixes | BladesBeats",
+    description: "Explora singles, remixes, instrumentales y sesiones DJ de BladesBeats, con enlaces verificados a Spotify, Apple Music, YouTube y Mixcloud.",
     canonical: PAGE_ALTERNATES.music.es,
     label: "Música",
     h1: "Música",
-    intro: "Escucha, mira y sigue a BladesBeats en las plataformas oficiales.",
+    intro: "Explora lanzamientos originales, remixes, instrumentales y sesiones DJ, y escúchalos mediante enlaces verificados.",
     activeNav: "music",
     lang: "es",
     alternates: PAGE_ALTERNATES.music,
     jsonLd: itemList,
     body: `<div class="platform-actions">
-  <a class="button primary" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">Spotify</a>
-  <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">Apple Music</a>
-  <a class="button" href="/es/sesiones/">Sesiones DJ</a>
+  <a class="button primary" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">Escuchar en Spotify</a>
+  <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">Escuchar en Apple Music</a>
+  <a class="button" href="/es/sesiones/">Explorar sesiones DJ</a>
 </div>
 ${releasePreview(releases, "es")}
 ${platformCatalog(releases, sets, "es")}`
@@ -2930,12 +2980,12 @@ function buildLegalNoticePage(lang = "en") {
     <p><strong>Contacto:</strong> ${mailtoLegalLink(legal)}</p>`
       },
       {
-        title: "Datos no publicados",
+        title: "Datos privados",
         html: `<p>No se publican domicilio privado, identificadores fiscales privados ni datos registrales no verificados.</p>
     <p>Si una contratación requiere datos legales o fiscales, se facilitan de forma privada a la parte contratante.</p>`
       },
       {
-        title: "Uso del sitio",
+        title: "Qué hace este sitio",
         html: `<p>bladesbeats.com es una página artística e informativa. No hay tienda online, precios publicados, pagos dentro del sitio, reservas automáticas ni contratación electrónica.</p>`
       },
       {
@@ -2948,7 +2998,7 @@ function buildLegalNoticePage(lang = "en") {
         html: `<p>Spotify, Apple Music, Mixcloud, YouTube, Instagram, TikTok y otros servicios enlazados aplican sus propias condiciones, disponibilidad y políticas.</p>`
       },
       {
-        title: "Actualización",
+        title: "Última actualización",
         html: `<p><small>Última actualización: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ] : [
@@ -2958,15 +3008,15 @@ function buildLegalNoticePage(lang = "en") {
     <p><strong>Public name:</strong> ${escapeHtml(legal.tradeName)}</p>
     <p><strong>Activity:</strong> music, DJ sets, gigs, and contact for bookings or collaborations.</p>
     <p><strong>Public base:</strong> ${escapeHtml(publicLocation)}</p>
-    <p><strong>Contact:</strong> ${mailtoLegalLink(legal, "email contact")}</p>`
+    <p><strong>Contact:</strong> ${mailtoLegalLink(legal, "email BladesBeats")}</p>`
       },
       {
-        title: "Details not published",
+        title: "Private details",
         html: `<p>A private home address, private tax identifiers and unverified registry details are not published.</p>
     <p>If a booking requires legal or tax details, they are provided privately to the contracting party.</p>`
       },
       {
-        title: "Site use",
+        title: "What this site does",
         html: `<p>bladesbeats.com is an artist and information website. There is no online shop, published price list, site payment, automatic reservation, or electronic contracting flow.</p>`
       },
       {
@@ -2979,18 +3029,18 @@ function buildLegalNoticePage(lang = "en") {
         html: `<p>Spotify, Apple Music, Mixcloud, YouTube, Instagram, TikTok and other linked services apply their own terms, availability and policies.</p>`
       },
       {
-        title: "Updated",
+        title: "Last updated",
         html: `<p><small>Last updated: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ]
   });
   return basePage({
     title: isEs ? "Aviso legal | BladesBeats" : "Legal notice | BladesBeats",
-    description: isEs ? "Aviso legal de BladesBeats, sitio oficial de artista, DJ y productor basado en Sevilla." : "Legal notice for BladesBeats, the official artist website for the Sevilla-based DJ and producer.",
+    description: isEs ? "Consulta quién gestiona bladesbeats.com, cómo puede utilizarse su contenido y dónde contactar con BladesBeats." : "Learn who operates bladesbeats.com, how its content may be used, and how to contact BladesBeats.",
     canonical: isEs ? PAGE_ALTERNATES.legalNotice.es : PAGE_ALTERNATES.legalNotice.en,
     label: "Legal",
     h1: isEs ? "Aviso legal" : "Legal notice",
-    intro: isEs ? "Sitio oficial y datos de contacto de BladesBeats." : "Official site and contact details for BladesBeats.",
+    intro: isEs ? "Quién gestiona este sitio, cómo puede utilizarse su contenido y dónde contactar." : "Who runs this artist website, how its content may be used, and where to make contact.",
     activeNav: "",
     lang,
     alternates: PAGE_ALTERNATES.legalNotice,
@@ -3011,17 +3061,17 @@ function buildLegalPrivacyPage(lang = "en") {
     <p><strong>Contacto privacidad:</strong> ${mailtoLegalLink(legal)}</p>`
       },
       {
-        title: "Datos",
+        title: "Datos tratados",
         html: `<p>El formulario de contacto trata los datos que decides enviar, como nombre, correo electrónico, tipo de solicitud, mensaje y los detalles de contratación, colaboración, derechos o privacidad que completes. También se tratan los datos que envías voluntariamente por correo, Instagram u otra plataforma enlazada.</p>
     <p>El sitio no consulta ni muestra tu dirección IP mediante un servicio del navegador. El alojamiento y Cloudflare pueden tratar datos técnicos, como IP, fecha, navegador y página solicitada, para entregar y proteger el sitio, verificar Turnstile y prevenir abusos.</p>`
       },
       {
-        title: "Finalidad",
-        html: `<p>Responder mensajes, gestionar consultas de contratación o colaboración, mantener la seguridad del sitio y conservar prueba de una comunicación cuando sea necesario.</p>`
+        title: "Para qué se utilizan",
+        html: `<p>Los datos se utilizan para responder mensajes, gestionar consultas de contratación o colaboración, proteger el sitio y conservar prueba de una comunicación cuando sea necesario.</p>`
       },
       {
         title: "Base jurídica",
-        html: `<p>Solicitud de la persona interesada, medidas precontractuales si hay una consulta de contratación, interés legítimo para seguridad y prevención de abusos, y consentimiento cuando proceda.</p>`
+        html: `<p>El tratamiento se basa en la solicitud de la persona interesada y, si existe una consulta de contratación, en medidas precontractuales. También puede basarse en el interés legítimo para la seguridad y la prevención de abusos, o en el consentimiento cuando proceda.</p>`
       },
       {
         title: "Destinatarios",
@@ -3040,20 +3090,20 @@ function buildLegalPrivacyPage(lang = "en") {
       {
         title: "Controller",
         html: `<p><strong>Public identity:</strong> ${escapeHtml(legal.tradeName)}</p>
-    <p><strong>Privacy contact:</strong> ${mailtoLegalLink(legal, "email contact")}</p>`
+    <p><strong>Privacy contact:</strong> ${mailtoLegalLink(legal, "email BladesBeats")}</p>`
       },
       {
-        title: "Data",
+        title: "Data we handle",
         html: `<p>The contact form handles the information you choose to submit, such as your name, email address, inquiry type, message, and any booking, collaboration, rights, or privacy-request details you complete. Information you voluntarily send by email, Instagram, or another linked platform is also handled.</p>
     <p>The site does not look up or display your IP address through a browser service. The host and Cloudflare may process technical data, such as IP address, date, browser, and requested page, to deliver and protect the site, verify Turnstile, and prevent abuse.</p>`
       },
       {
-        title: "Purpose",
-        html: `<p>Replying to messages, handling booking or collaboration inquiries, keeping the site secure and keeping proof of a communication when needed.</p>`
+        title: "Why we use it",
+        html: `<p>We use the data to reply to messages, handle booking or collaboration inquiries, protect the site, and keep proof of a communication when needed.</p>`
       },
       {
         title: "Legal basis",
-        html: `<p>The person's request, pre-contractual steps for booking inquiries, legitimate interest for security and abuse prevention, and consent where applicable.</p>`
+        html: `<p>We process data to respond to the person's request and, for booking inquiries, to take pre-contractual steps. We may also rely on legitimate interests for security and abuse prevention, or on consent where applicable.</p>`
       },
       {
         title: "Recipients",
@@ -3072,11 +3122,11 @@ function buildLegalPrivacyPage(lang = "en") {
   });
   return basePage({
     title: isEs ? "Política de privacidad | BladesBeats" : "Privacy policy | BladesBeats",
-    description: isEs ? "Política de privacidad de BladesBeats para contacto, booking y colaboraciones." : "Privacy policy for BladesBeats contact, booking and collaboration inquiries.",
+    description: isEs ? "Consulta qué datos trata BladesBeats al recibir consultas, por qué se utilizan, cuánto tiempo se conservan y cuáles son tus derechos." : "Learn what data BladesBeats handles for inquiries, why it is used, how long it is kept, and what rights you have.",
     canonical: isEs ? PAGE_ALTERNATES.privacy.es : PAGE_ALTERNATES.privacy.en,
     label: "Legal",
     h1: isEs ? "Política de privacidad" : "Privacy policy",
-    intro: isEs ? "Cómo se gestionan mensajes de contacto y booking." : "How contact and booking messages are handled.",
+    intro: isEs ? "Qué ocurre con los datos que envías mediante el formulario, el correo o las plataformas enlazadas." : "What happens to data you send through the contact form, email, or linked platforms.",
     activeNav: "",
     lang,
     alternates: PAGE_ALTERNATES.privacy,
@@ -3092,7 +3142,7 @@ function buildLegalCookiePage(lang = "en") {
     current: "cookies",
     sections: isEs ? [
       {
-        title: "Uso actual",
+        title: "Analítica y publicidad",
         html: `<p>En la última actualización, bladesbeats.com no carga scripts de Google Analytics, Google Tag Manager, Meta Pixel o TikTok Pixel desde el HTML.</p>
     <p>No hay tienda online ni se instalan deliberadamente cookies publicitarias o de analítica.</p>`
       },
@@ -3112,7 +3162,7 @@ function buildLegalCookiePage(lang = "en") {
       }
     ] : [
       {
-        title: "Current use",
+        title: "Analytics and advertising",
         html: `<p>As of the last update, bladesbeats.com does not load Google Analytics, Google Tag Manager, Meta Pixel or TikTok Pixel scripts from the HTML.</p>
     <p>There is no online shop, and the site does not deliberately set advertising or analytics cookies.</p>`
       },
@@ -3127,7 +3177,7 @@ function buildLegalCookiePage(lang = "en") {
       {
         title: "Control",
         html: `<p>The language selector uses separate URLs and does not save a preference in local storage. If analytics, advertising, pixels or non-essential cookies are added, this policy and consent handling must be updated before they are used.</p>
-    <p>For cookie or privacy questions, use this ${mailtoLegalLink(legal, "email contact")}.</p>
+    <p>For cookie or privacy questions, ${mailtoLegalLink(legal, "email BladesBeats")}.</p>
     <p><small>Last updated: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ]
@@ -3135,12 +3185,12 @@ function buildLegalCookiePage(lang = "en") {
   return basePage({
     title: isEs ? "Política de cookies | BladesBeats" : "Cookie policy | BladesBeats",
     description: isEs
-      ? "Cómo utiliza BladesBeats.com cookies, portadas externas y reproductores multimedia bajo demanda."
-      : "How BladesBeats.com uses cookies, external artwork, and privacy-gated media players.",
+      ? "Consulta cuándo bladesbeats.com conecta con Cloudflare o Mixcloud y qué servicios de analítica, publicidad o almacenamiento local utiliza."
+      : "Learn when bladesbeats.com connects to Cloudflare or Mixcloud and which analytics, advertising, or local-storage services it uses.",
     canonical: isEs ? PAGE_ALTERNATES.cookies.es : PAGE_ALTERNATES.cookies.en,
     label: "Legal",
     h1: isEs ? "Política de cookies" : "Cookie policy",
-    intro: isEs ? "Cookies y almacenamiento local usados en bladesbeats.com." : "Cookies and local storage used on bladesbeats.com.",
+    intro: isEs ? "Qué servicios externos pueden almacenar datos, cuándo se conectan y cómo mantiene el sitio el control." : "Which external services may store data, when they connect, and how the site keeps that under control.",
     activeNav: "",
     lang,
     alternates: PAGE_ALTERNATES.cookies,
