@@ -94,9 +94,9 @@ function directLinks(release) {
 
 function preferredLink(release) {
   const links = directLinks(release);
+  if (links.youtube) return ["YouTube", links.youtube];
   if (links.spotify) return ["Spotify", links.spotify];
   if (links.appleMusic) return ["Apple Music", links.appleMusic];
-  if (links.youtube) return ["YouTube", links.youtube];
   return ["Release page", detailPath(release)];
 }
 
@@ -503,12 +503,12 @@ function buildLegal(kind, lang, legal) {
   ]) : (es ? [
     ["Cookies del sitio", `<p>BladesBeats.com no instala cookies de analítica, publicidad o personalización. La preferencia de idioma se elige mediante enlaces separados y no requiere una cookie.</p>`],
     ["Contenido externo", `<p>Las portadas oficiales pueden solicitarse a las redes de Apple, YouTube o Mixcloud cuando se abre una página. Los reproductores de YouTube y Mixcloud no se cargan al abrirla; esa conexión adicional solo se crea cuando pulsas el botón para cargar el reproductor.</p>`],
-    ["Enlaces externos", `<p>Si abres Spotify, Apple Music, YouTube, Mixcloud, Instagram, TikTok u otro sitio externo, ese servicio puede utilizar sus propias cookies según su política.</p>`],
+    ["Enlaces externos", `<p>Si abres YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok u otro sitio externo, ese servicio puede utilizar sus propias cookies según su política.</p>`],
     ["Cambios", `<p>Si en el futuro se añade una función que requiera cookies no esenciales, se actualizará esta información y se solicitará consentimiento cuando sea necesario.</p>`]
   ] : [
     ["Website cookies", `<p>BladesBeats.com does not set analytics, advertising or personalisation cookies. Language is selected through separate links and does not require a cookie.</p>`],
     ["External content", `<p>Official artwork may be requested from Apple, YouTube or Mixcloud content networks when a page opens. YouTube and Mixcloud players do not load at that point; that additional connection is made only after the visitor presses the player button.</p>`],
-    ["External links", `<p>If you open Spotify, Apple Music, YouTube, Mixcloud, Instagram, TikTok or another external site, that service may use its own cookies under its policy.</p>`],
+    ["External links", `<p>If you open YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok or another external site, that service may use its own cookies under its policy.</p>`],
     ["Changes", `<p>If a future feature requires non-essential cookies, this information will be updated and consent will be requested where required.</p>`]
   ]);
   const navItems = [["notice", es ? "Aviso legal" : "Legal notice"], ["privacy", es ? "Privacidad" : "Privacy"], ["cookies", es ? "Cookies" : "Cookies"]];

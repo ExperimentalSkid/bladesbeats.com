@@ -13,10 +13,10 @@ const EXCLUDED_RELEASE_TITLE_KEYS = new Set(["i ll be there", "ill be there"]);
 const EXCLUDED_RELEASE_TEXT = ["gabriela bee"];
 
 const PLATFORM_LINKS = [
+  ["YouTube", "https://youtube.com/@bladesbeats"],
   ["Spotify", "https://open.spotify.com/artist/63221ca19GsgTnQISR51xl"],
   ["Apple Music", "https://music.apple.com/us/artist/bladesbeats/1729442137"],
   ["Mixcloud", "https://www.mixcloud.com/BladesBeats/"],
-  ["YouTube", "https://youtube.com/@bladesbeats"],
   ["Instagram", "https://www.instagram.com/blades_beats/"],
   ["TikTok", "https://www.tiktok.com/@bladesbeats"]
 ];
@@ -328,8 +328,10 @@ function injectHomepageCatalogFallback(html, releases = [], catalog = readCatalo
   const latestSet = latestCatalogEvent(events, "set");
   const latestReleaseDate = latestRelease?.date ? formatCatalogDate(latestRelease.date) : "2026";
   const latestReleaseUrl = latestRelease?.url || "/music/";
-  const latestReleasePlatform = latestRelease?.appleMusicUrl || latestRelease?.spotifyUrl || latestRelease?.youtubeUrl || "https://music.apple.com/us/artist/bladesbeats/1729442137";
-  const latestReleasePlatformLabel = latestRelease?.appleMusicUrl ? "Apple Music" : latestRelease?.spotifyUrl ? "Spotify" : latestRelease?.youtubeUrl ? "YouTube" : "Music platform";
+  const latestReleasePlatform = latestRelease
+    ? latestRelease.youtubeUrl || serviceSearchUrl("youtube", latestRelease.title || "BladesBeats")
+    : "https://youtube.com/@bladesbeats";
+  const latestReleasePlatformLabel = "YouTube";
   let next = html
     .replace(
       /<a class="home-hero-cta" href="[^"]*" data-i18n="home_hero_cta">/,
@@ -526,9 +528,15 @@ function validateUniqueSlugs(items, label) {
 }
 
 function cleanLinks(links) {
+  const priority = ["youtube", "spotify", "appleMusic", "mixcloud", "deezer", "amazonMusic"];
   return Object.entries(links || {})
     .filter(([, url]) => typeof url === "string" && url.trim())
-    .map(([name, url]) => [name, url.trim()]);
+    .map(([name, url]) => [name, url.trim()])
+    .sort(([nameA], [nameB]) => {
+      const rankA = priority.includes(nameA) ? priority.indexOf(nameA) : priority.length;
+      const rankB = priority.includes(nameB) ? priority.indexOf(nameB) : priority.length;
+      return rankA - rankB;
+    });
 }
 
 function hasOfficialLink(item) {
@@ -636,10 +644,10 @@ function siteFooter(lang = "en") {
     <div class="site-footer-col">
       <p class="site-footer-label">${isEs ? "Plataformas" : "Music platforms"}</p>
       <ul class="site-footer-list">
+        <li><a href="https://youtube.com/@bladesbeats" target="_blank" rel="noopener noreferrer">YouTube</a></li>
         <li><a href="https://open.spotify.com/artist/63221ca19GsgTnQISR51xl" target="_blank" rel="noopener noreferrer">Spotify</a></li>
         <li><a href="https://music.apple.com/us/artist/bladesbeats/1729442137" target="_blank" rel="noopener noreferrer">Apple Music</a></li>
         <li><a href="https://www.mixcloud.com/BladesBeats/" target="_blank" rel="noopener noreferrer">Mixcloud</a></li>
-        <li><a href="https://youtube.com/@bladesbeats" target="_blank" rel="noopener noreferrer">YouTube</a></li>
       </ul>
     </div>
     <div class="site-footer-col">
@@ -1225,9 +1233,9 @@ function releasePlatformRoutes(release, lang = "en") {
   const directVideo = lang === "es" ? "Enlace directo al vídeo" : "Direct video link";
   const searchTitle = lang === "es" ? "Búsqueda por título" : "Title search";
   const routes = [
+    { key: "youtube", href: platformAllowed(release, "youtube") ? directLinks.youtube || (!restricted ? serviceSearchUrl("youtube", title) : "") : "", meta: directLinks.youtube ? directVideo : searchTitle, direct: Boolean(directLinks.youtube) },
     { key: "spotify", href: platformAllowed(release, "spotify") ? directLinks.spotify || (!restricted ? serviceSearchUrl("spotify", title) : "") : "", meta: directLinks.spotify ? directTrack : searchTitle, direct: Boolean(directLinks.spotify) },
     { key: "appleMusic", href: platformAllowed(release, "appleMusic") ? directLinks.appleMusic : "", meta: directTrack, direct: Boolean(directLinks.appleMusic) },
-    { key: "youtube", href: platformAllowed(release, "youtube") ? directLinks.youtube || (!restricted ? serviceSearchUrl("youtube", title) : "") : "", meta: directLinks.youtube ? directVideo : searchTitle, direct: Boolean(directLinks.youtube) },
     { key: "deezer", href: platformAllowed(release, "deezer") ? directLinks.deezer : "", meta: directTrack, direct: Boolean(directLinks.deezer) },
     { key: "amazonMusic", href: platformAllowed(release, "amazonMusic") ? directLinks.amazonMusic : "", meta: directTrack, direct: Boolean(directLinks.amazonMusic) }
   ];
@@ -1439,10 +1447,10 @@ ${entries.map((entry) => `<a class="platform-entry" href="${escapeAttr(entry.hre
 
 function platformCatalog(releases, sets, lang = "en") {
   const isEs = lang === "es";
+  const youtubeUrl = PLATFORM_LINKS.find(([name]) => name === "YouTube")?.[1] || "";
   const spotifyUrl = PLATFORM_LINKS.find(([name]) => name === "Spotify")?.[1] || "";
   const appleUrl = PLATFORM_LINKS.find(([name]) => name === "Apple Music")?.[1] || "";
   const mixcloudUrl = PLATFORM_LINKS.find(([name]) => name === "Mixcloud")?.[1] || "";
-  const youtubeUrl = PLATFORM_LINKS.find(([name]) => name === "YouTube")?.[1] || "";
   const instagramUrl = PLATFORM_LINKS.find(([name]) => name === "Instagram")?.[1] || "";
   const tiktokUrl = PLATFORM_LINKS.find(([name]) => name === "TikTok")?.[1] || "";
   const countLabel = (count, singular, plural) => `${count} ${count === 1 ? singular : plural}`;
@@ -1452,12 +1460,12 @@ function platformCatalog(releases, sets, lang = "en") {
   const youtubeEntries = releasePlatformEntries(releases, "youtube", lang);
   const platforms = [
     {
-      key: "apple-music",
-      name: "Apple Music",
-      count: countLabel(appleEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
-      copy: isEs ? "Enlaces verificados de Apple Music para los lanzamientos disponibles de BladesBeats." : "Verified Apple Music links for the available BladesBeats releases.",
-      profileUrl: appleUrl,
-      entries: appleEntries
+      key: "youtube",
+      name: "YouTube",
+      count: countLabel(youtubeEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
+      copy: isEs ? "Remixes, edits y sesiones desde el canal oficial de BladesBeats en YouTube." : "Remixes, edits, and sets from the official BladesBeats YouTube channel.",
+      profileUrl: youtubeUrl,
+      entries: youtubeEntries
     },
     {
       key: "spotify",
@@ -1468,20 +1476,20 @@ function platformCatalog(releases, sets, lang = "en") {
       entries: spotifyEntries
     },
     {
+      key: "apple-music",
+      name: "Apple Music",
+      count: countLabel(appleEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
+      copy: isEs ? "Los lanzamientos de BladesBeats que también cuentan con enlace directo en Apple Music." : "BladesBeats releases that also have a direct Apple Music link.",
+      profileUrl: appleUrl,
+      entries: appleEntries
+    },
+    {
       key: "mixcloud",
       name: "Mixcloud",
       count: countLabel(mixcloudEntries.length, isEs ? "sesi\u00f3n" : "set", isEs ? "sesiones" : "sets"),
       copy: isEs ? "Sesiones DJ completas desde el perfil oficial de BladesBeats en Mixcloud." : "Full-length DJ sets from the official BladesBeats Mixcloud profile.",
       profileUrl: mixcloudUrl,
       entries: mixcloudEntries
-    },
-    {
-      key: "youtube",
-      name: "YouTube",
-      count: countLabel(youtubeEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
-      copy: isEs ? "Remixes, edits y sesiones desde el canal oficial de BladesBeats en YouTube." : "Remixes, edits, and sets from the official BladesBeats YouTube channel.",
-      profileUrl: youtubeUrl,
-      entries: youtubeEntries
     },
     {
       key: "instagram",
@@ -1732,11 +1740,11 @@ function buildMusicIndex(releases, generatedReleaseUrls, sets) {
       "item": releaseSchema(release, generatedReleaseUrls.get(release.slug) || "")
     }))
   };
+  const youtubeUrl = PLATFORM_LINKS.find(([name]) => name === "YouTube")?.[1] || "";
   const spotifyUrl = PLATFORM_LINKS.find(([name]) => name === "Spotify")?.[1] || "";
-  const appleUrl = PLATFORM_LINKS.find(([name]) => name === "Apple Music")?.[1] || "";
   return basePage({
     title: "Music and remixes | BladesBeats",
-    description: "BladesBeats singles, remixes, instrumentals, and DJ sets, with verified links to Spotify, Apple Music, YouTube, and Mixcloud.",
+    description: "BladesBeats singles, remixes, instrumentals, and DJ sets, with videos on YouTube and listening links across the major music platforms.",
     canonical: `${SITE}/music/`,
     label: "Music",
     h1: "Music",
@@ -1745,8 +1753,8 @@ function buildMusicIndex(releases, generatedReleaseUrls, sets) {
     alternates: PAGE_ALTERNATES.music,
     jsonLd: itemList,
     body: `<div class="platform-actions">
-  <a class="button primary" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats on Spotify</a>
-  <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats on Apple Music</a>
+  <a class="button primary" href="${escapeAttr(youtubeUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats on YouTube</a>
+  <a class="button" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats on Spotify</a>
   <a class="button" href="/dj-sets/">DJ set archive</a>
 </div>
 ${releasePreview(releases, "en")}
@@ -1801,40 +1809,29 @@ function buildReleasePage(release, lang = "en", releases = [release]) {
   const socialDimensions = socialImageDimensions(image, { width: 1200, height: 1200 });
   const heroCopy = releaseSummary(release, lang);
   const coverAlt = isEs ? `Portada de ${title}` : `${title} cover artwork`;
-  const directPlatformNames = routes.filter((route) => route.direct).map((route) => labelForLink(route.key));
-  const searchPlatformNames = routes.filter((route) => !route.direct).map((route) => labelForLink(route.key));
   const releaseFacts = [
     [isEs ? "Publicado" : "Released", publishedDate],
     [isEs ? "Formato" : "Format", factFormatLabel],
-    [isEs ? "Artista" : "Artist", release.artist || "BladesBeats"],
-    [isEs ? "Enlaces oficiales" : "Official links", directPlatformNames.join(", ")]
+    [isEs ? "Artista" : "Artist", release.artist || "BladesBeats"]
   ].filter(([, value]) => value);
-  const directLinkCopy = directPlatformNames.length
-    ? (isEs
-      ? `Este lanzamiento ${directPlatformNames.length === 1 ? "está disponible directamente" : "tiene enlaces directos"} en ${naturalList(directPlatformNames, lang)}`
-      : `This release ${directPlatformNames.length === 1 ? "is available directly" : "has direct links"} on ${naturalList(directPlatformNames, lang)}`)
-    : "";
-  const searchLinkCopy = searchPlatformNames.length
-    ? (isEs
-      ? `el título exacto también permite encontrarlo en ${naturalList(searchPlatformNames, lang)}`
-      : `its exact title also brings it up on ${naturalList(searchPlatformNames, lang)}`)
-    : "";
   const platformCopy = isYoutubeOnlyRelease(release)
     ? (isEs ? "El enlace verificado de YouTube lleva a la publicación oficial." : "The verified YouTube link leads to the official upload.")
-    : directLinkCopy && searchLinkCopy
-      ? `${directLinkCopy}; ${searchLinkCopy}.`
-      : directLinkCopy
-        ? `${directLinkCopy}.`
-        : searchLinkCopy
-          ? `${searchLinkCopy.charAt(0).toLocaleUpperCase(isEs ? "es-ES" : "en-GB")}${searchLinkCopy.slice(1)}.`
-          : (isEs ? "La portada, la fecha y el formato forman parte del archivo de este lanzamiento." : "The artwork, date, and format are collected here as part of the release archive.");
+    : routes.length
+      ? (isEs ? "El vídeo y las opciones de escucha están reunidos aquí, con enlaces directos cuando están disponibles y búsquedas por título cuando hace falta." : "Video and listening options are gathered here, with direct links where available and title searches where needed.")
+      : (isEs ? "La portada, la fecha y el formato forman parte del archivo de este lanzamiento." : "The artwork, date, and format are collected here as part of the release archive.");
   const releaseCopy = isEs
     ? platformCopy
     : (release.longDescription || platformCopy);
-  const primaryRoute = routes.find((route) => route.direct) || routes[0] || null;
-  const primaryLabel = isYoutubeOnlyRelease(release)
-    ? (isEs ? "Vídeo oficial en" : "Official video on")
-    : (isEs ? "Disponible en" : "Available on");
+  const primaryRoute = routes.find((route) => route.key === "youtube" && route.direct)
+    || routes.find((route) => route.key === "spotify" && route.direct)
+    || routes.find((route) => route.key === "youtube")
+    || routes.find((route) => route.key === "spotify")
+    || routes.find((route) => route.key === "appleMusic")
+    || routes[0]
+    || null;
+  const primaryLabel = primaryRoute?.key === "youtube"
+    ? (primaryRoute.direct ? (isEs ? "Vídeo en" : "Video on") : (isEs ? "Buscar en" : "Find on"))
+    : (isEs ? "Escuchar en" : "Listen on");
   const sortedReleases = [...releases].sort((a, b) => (
     String(b.releaseDate || b.lastmod || "").localeCompare(String(a.releaseDate || a.lastmod || ""))
       || displayReleaseTitle(a).localeCompare(displayReleaseTitle(b))
@@ -2920,11 +2917,11 @@ function buildSpanishMusicPage(releases, generatedReleaseUrls, sets) {
       "item": releaseSchema(release, generatedReleaseUrls.get(release.slug) || "")
     }))
   };
+  const youtubeUrl = PLATFORM_LINKS.find(([name]) => name === "YouTube")?.[1] || "";
   const spotifyUrl = PLATFORM_LINKS.find(([name]) => name === "Spotify")?.[1] || "";
-  const appleUrl = PLATFORM_LINKS.find(([name]) => name === "Apple Music")?.[1] || "";
   return basePage({
     title: "Música y remixes | BladesBeats",
-    description: "Singles, remixes, instrumentales y sesiones DJ de BladesBeats, con enlaces verificados a Spotify, Apple Music, YouTube y Mixcloud.",
+    description: "Singles, remixes, instrumentales y sesiones DJ de BladesBeats, con vídeos en YouTube y enlaces de escucha en las principales plataformas.",
     canonical: PAGE_ALTERNATES.music.es,
     label: "Música",
     h1: "Música",
@@ -2934,8 +2931,8 @@ function buildSpanishMusicPage(releases, generatedReleaseUrls, sets) {
     alternates: PAGE_ALTERNATES.music,
     jsonLd: itemList,
     body: `<div class="platform-actions">
-  <a class="button primary" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats en Spotify</a>
-  <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats en Apple Music</a>
+  <a class="button primary" href="${escapeAttr(youtubeUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats en YouTube</a>
+  <a class="button" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats en Spotify</a>
   <a class="button" href="/es/sesiones/">Archivo de sesiones DJ</a>
 </div>
 ${releasePreview(releases, "es")}
@@ -3011,7 +3008,7 @@ function buildLegalNoticePage(lang = "en") {
       },
       {
         title: "Enlaces externos",
-        html: `<p>Spotify, Apple Music, Mixcloud, YouTube, Instagram, TikTok y otros servicios enlazados aplican sus propias condiciones, disponibilidad y políticas.</p>`
+        html: `<p>YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok y otros servicios enlazados aplican sus propias condiciones, disponibilidad y políticas.</p>`
       },
       {
         title: "Última actualización",
@@ -3042,7 +3039,7 @@ function buildLegalNoticePage(lang = "en") {
       },
       {
         title: "External links",
-        html: `<p>Spotify, Apple Music, Mixcloud, YouTube, Instagram, TikTok and other linked services apply their own terms, availability and policies.</p>`
+        html: `<p>YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok and other linked services apply their own terms, availability and policies.</p>`
       },
       {
         title: "Last updated",
@@ -3255,7 +3252,7 @@ function validateHomepage() {
   if (!/<script defer src="\/assets\/js\/catalog-hero\.js\?v=[a-f0-9]{12}"><\/script>/.test(html)) {
     throw new Error("Homepage catalog hero script missing.");
   }
-  for (const label of ["Spotify", "Apple Music", "Mixcloud", "YouTube", "Instagram", "TikTok"]) {
+  for (const label of ["YouTube", "Spotify", "Apple Music", "Mixcloud", "Instagram", "TikTok"]) {
     if (!html.includes(label)) throw new Error(`Homepage platform section missing ${label}.`);
   }
   const jsonMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
