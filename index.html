@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BladesBeats | DJ &amp; Producer &middot; Sevilla</title>
 <meta name="description" content="BladesBeats is a Norwegian-born DJ and producer based in Sevilla, Spain, focused on electronic music, DJ sets, and original music production.">
-<meta name="robots" content="index,follow,max-image-preview:large">
 <meta name="theme-color" content="#090B18">
 <meta name="author" content="BladesBeats">
 <link rel="canonical" href="https://bladesbeats.com/">
@@ -39,7 +38,8 @@
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"></noscript>
-<link rel="stylesheet" href="/assets/css/tokens.css">
+<link rel="stylesheet" href="/assets/css/tokens.css?v=b9f1590ee696">
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -398,6 +398,26 @@ body::before{
 :focus-visible{
   outline:1px solid var(--accent-2);
   outline-offset:4px;
+}
+.skip-link{
+  position:fixed;
+  top:12px;
+  left:12px;
+  z-index:1000;
+  padding:10px 14px;
+  transform:translateY(-160%);
+  background:var(--paper);
+  color:var(--night);
+  font-family:var(--font-mono);
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-decoration:none;
+  text-transform:uppercase;
+  transition:transform .18s var(--ease);
+}
+.skip-link:focus{
+  transform:translateY(0);
 }
 .site-nav{
   background:var(--night);
@@ -903,12 +923,12 @@ body::before{
     flex-wrap:wrap;
     justify-content:flex-start;
     gap:8px 10px;
-    font-size:9.5px;
+    font-size:11px;
     letter-spacing:.14em;
   }
   .site-nav-menu a,
   .site-nav-lang{
-    min-height:26px;
+    min-height:36px;
   }
   .home-hero{
     gap:24px;
@@ -1514,6 +1534,7 @@ body::before{
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main" data-i18n="skip_to_content">Skip to content</a>
 <div class="site-shell">
 <header class="site-nav" role="banner">
   <div class="site-nav-inner">
@@ -1599,10 +1620,10 @@ body::before{
     <section class="home-latest" data-latest-panel aria-label="Latest catalogue highlights">
       <p class="home-latest-label" data-i18n="home_latest_label">Latest from the catalogue</p>
       <div class="home-latest-grid">
-        <a class="home-latest-card" href="/music/hector-lavoe-juanito-alimana-bladesbeats-dnb-remix/" data-latest-card="release" style="--latest-color:#E9EEFB" aria-label="Latest release: Héctor Lavoe – Juanito Alimaña (BladesBeats DnB Remix), 25 Jun 2026">
+        <a class="home-latest-card" href="/music/waiting-for-the-right-time/" data-latest-card="release" style="--latest-color:#E9EEFB" aria-label="Latest release: Waiting for the right time, 20 Aug 2026">
           <span data-i18n="home_latest_release">Latest release</span>
-          <strong data-latest-title>Héctor Lavoe – Juanito Alimaña (BladesBeats DnB Remix)</strong>
-          <small data-latest-date>25 Jun 2026</small>
+          <strong data-latest-title>Waiting for the right time</strong>
+          <small data-latest-date>20 Aug 2026</small>
         </a>
         <a class="home-latest-card" href="/dj-sets/summer-opening-set/" data-latest-card="set" style="--latest-color:#9D5BFF" aria-label="Latest set: Summer opening set, 6 Jun 2026">
           <span data-i18n="home_latest_set">Latest set</span>
@@ -1620,14 +1641,14 @@ body::before{
           <div class="catalog-card-head">
             <div>
               <p class="catalog-card-kind" data-catalog-kind data-i18n="catalog_card_release_kind">Release</p>
-              <h2 class="catalog-card-title" data-catalog-title>Héctor Lavoe – Juanito Alimaña (BladesBeats DnB Remix)</h2>
-              <p class="catalog-card-meta" data-catalog-meta>25 Jun 2026</p>
+              <h2 class="catalog-card-title" data-catalog-title>Waiting for the right time</h2>
+              <p class="catalog-card-meta" data-catalog-meta>20 Aug 2026</p>
             </div>
             <button class="catalog-card-close" type="button" data-catalog-close aria-label="Close catalogue card">&times;</button>
           </div>
           <div class="catalog-card-actions">
             <a href="/music/hector-lavoe-juanito-alimana-bladesbeats-dnb-remix/" data-catalog-page data-i18n="catalog_card_release_page">Release page</a>
-            <a href="https://www.youtube.com/watch?v=e8IQ-uiKR6o" target="_blank" rel="noopener noreferrer" data-catalog-service>YouTube</a>
+            <a href="https://music.apple.com/us/album/waiting-for-the-right-time/6803793531?i=6803793534&amp;uo=4" target="_blank" rel="noopener noreferrer" data-catalog-service>Apple Music</a>
           </div>
         </article>
       </div>
@@ -1642,7 +1663,7 @@ body::before{
 
   <section class="home-hero-foot">
     <span class="home-hero-foot-rule" aria-hidden="true"></span>
-    <p class="home-hero-foot-meta" id="catalog-counter"><b>42 <span data-i18n="catalog_count_release_many">releases</span></b> &middot; 4 <span data-i18n="catalog_count_set_many">sets</span> &middot; 1 <span data-i18n="catalog_count_gig_one">gig</span></p>
+    <p class="home-hero-foot-meta" id="catalog-counter"><b>45 <span data-i18n="catalog_count_release_many">releases</span></b> &middot; 4 <span data-i18n="catalog_count_set_many">sets</span> &middot; 1 <span data-i18n="catalog_count_gig_one">gig</span></p>
   </section>
 </section>
 
@@ -1708,7 +1729,7 @@ body::before{
         <div class="appearance-modal-links">
           <a href="https://expotattooestepona.weebly.com/" target="_blank" rel="noopener noreferrer" data-i18n="appearance_modal_official">Official ExpoTattoo Estepona</a>
           <a href="https://ayuntamiento.estepona.es/noticia/19425-los-mejores-tatuadores-del-panorama-nacional-e-internacional-se-daran-cita-en-una-nueva-edicion-de-expotattoo" target="_blank" rel="noopener noreferrer" data-i18n="appearance_modal_source">Estepona Town Hall source</a>
-          <a href="/booking/" data-appearance-close data-i18n="appearance_modal_contact">Contact BladesBeats</a>
+          <a href="#booking" data-nav="booking" data-appearance-close data-i18n="appearance_modal_contact">Contact BladesBeats</a>
         </div>
       </div>
     </dialog>
@@ -2004,7 +2025,7 @@ body::before{
 
 <script id="catalog-data" type="application/json">
 {
-  "generated": "2026-06-25T21:14:38.903Z",
+  "generated": "2026-08-24T09:55:06.378Z",
   "start": "2017-01-01",
   "events": [
     {
@@ -2260,6 +2281,15 @@ body::before{
       "appleMusicUrl": "https://music.apple.com/us/album/alina/1761845578?i=1761845579&uo=4"
     },
     {
+      "id": "release-older",
+      "date": "2024-08-09",
+      "kind": "release",
+      "title": "Older",
+      "url": "/music/older/",
+      "source": "appleMusic",
+      "appleMusicUrl": "https://music.apple.com/es/album/older/1762317005?i=1762317006&uo=4"
+    },
+    {
       "id": "release-nuestra-navidad-en-canal-sur-remix",
       "date": "2024-12-24",
       "kind": "release",
@@ -2431,6 +2461,24 @@ body::before{
       "url": "/music/hector-lavoe-juanito-alimana-bladesbeats-dnb-remix/",
       "source": "youtube",
       "youtubeUrl": "https://www.youtube.com/watch?v=e8IQ-uiKR6o"
+    },
+    {
+      "id": "release-snowgoons-fight-back-ft-watts-bladesbeats-remix-edit",
+      "date": "2026-08-10",
+      "kind": "release",
+      "title": "Snowgoons - Fight Back ft. Watts (BladesBeats Remix / Edit)",
+      "url": "/music/snowgoons-fight-back-ft-watts-bladesbeats-remix-edit/",
+      "source": "youtube",
+      "youtubeUrl": "https://www.youtube.com/watch?v=P9ne0Lcwcv8"
+    },
+    {
+      "id": "release-waiting-for-the-right-time",
+      "date": "2026-08-20",
+      "kind": "release",
+      "title": "Waiting for the right time",
+      "url": "/music/waiting-for-the-right-time/",
+      "source": "appleMusic",
+      "appleMusicUrl": "https://music.apple.com/us/album/waiting-for-the-right-time/6803793531?i=6803793534&uo=4"
     }
   ]
 }
@@ -2438,6 +2486,7 @@ body::before{
 <script>
 const COPY = {
   en: {
+    skip_to_content:"Skip to content",
     nav_home:"Home",
     nav_releases:"Music",
     nav_sets:"Sets",
@@ -2664,6 +2713,7 @@ const COPY = {
     footer_cookies:"Cookie policy"
   },
   es: {
+    skip_to_content:"Saltar al contenido",
     nav_home:"Inicio",
     nav_releases:"Música",
     nav_sets:"Sesiones",
@@ -3021,8 +3071,8 @@ function settleHashRoute(){
   setTimeout(resetPageScroll, 750);
 }
 
-const CONTACT_EMAIL = "";
-const CONTACT_ENDPOINT = "";
+const CONTACT_EMAIL = "bladesbeats.opossum156@passinbox.com";
+const CONTACT_ENDPOINT = "/api/contact";
 let contactIpDetected = "";
 let contactIpRequested = false;
 
@@ -3092,7 +3142,23 @@ function setContactStatus(message, kind){
 
 function detectContactIp(){
   const ipEl = document.querySelector("[data-contact-ip]");
-  if(ipEl) ipEl.textContent = "not collected";
+  if(contactIpDetected){
+    if(ipEl) ipEl.textContent = contactIpDetected;
+    return;
+  }
+  if(contactIpRequested) return;
+  contactIpRequested = true;
+  fetch("https://api.ipify.org?format=json")
+    .then(response => response.ok ? response.json() : false)
+    .then(data => {
+      if(data && data.ip){
+        contactIpDetected = data.ip;
+        if(ipEl) ipEl.textContent = contactIpDetected;
+      }
+    })
+    .catch(() => {
+      if(ipEl) ipEl.textContent = "not detected";
+    });
 }
 
 function renderTurnstile(tries){
@@ -3358,6 +3424,6 @@ setInterval(setCurrentYear, 60 * 60 * 1000);
 setLang(LANG);
 routeFromHash();
 </script>
-<script defer src="/assets/js/catalog-hero.js"></script>
+<script defer src="/assets/js/catalog-hero.js?v=4ae2252e4b2a"></script>
 </body>
 </html>

@@ -1,11 +1,13 @@
 {
   "scripts": {
-    "catalog:check": "node scripts/check-releases.js",
-    "build": "node scripts/build-launch.js",
-    "build:refresh": "npm run catalog:check && node scripts/build-launch.js",
-    "validate": "node scripts/validate-build.js",
-    "validate:external": "node scripts/check-external-links.js",
-    "test:desk": "node scripts/test-release-desk.js",
-    "test": "node scripts/build-launch.js && node scripts/validate-build.js && node scripts/test-release-desk.js"
+    "fetch:spotify": "node scripts/fetch-spotify.js",
+    "fetch:mixcloud": "node scripts/fetch-mixcloud.js",
+    "fetch:youtube": "node scripts/fetch-youtube.js",
+    "fetch": "npm run fetch:spotify && npm run fetch:mixcloud && npm run fetch:youtube",
+    "merge": "node scripts/merge-catalog.js",
+    "build": "npm run fetch && npm run merge && node scripts/build-pages.js",
+    "build:offline": "npm run merge && node scripts/build-pages.js",
+    "contact:dev": "wrangler dev --config workers/wrangler.contact.toml",
+    "contact:deploy": "wrangler deploy --config workers/wrangler.contact.toml"
   }
 }

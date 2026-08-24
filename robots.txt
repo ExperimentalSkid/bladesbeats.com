@@ -1,0 +1,11 @@
+# robots.txt - bladesbeats.com
+# Public artist website. Crawling is allowed for search, discovery, and AI retrieval.
+# Privacy is handled by not publishing private/legal details in public files.
+
+User-agent: *
+Disallow:
+
+# AI-readable public source files:
+# https://bladesbeats.com/llms.txt
+# https://bladesbeats.com/llms-full.txt
+Sitemap: https://bladesbeats.com/sitemap.xml
