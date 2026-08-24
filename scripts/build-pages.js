@@ -287,7 +287,38 @@ function injectHomepageCoverWall(html, releases, sets) {
   return html.replace(existing, `${wall}\n    <div class="home-cover-scrim"`);
 }
 
-function injectHomepageCatalogFallback(html, catalog = readCatalogData()) {
+function renderHomepageFeaturedRelease(event, releases = []) {
+  const fallback = {
+    title: "Official releases",
+    href: "/music/",
+    image: `${SITE}/og-card.png`,
+    date: ""
+  };
+  const eventSlug = String(event?.url || "").match(/\/music\/([^/]+)\/?$/)?.[1] || "";
+  const release = releases.find((item) => item.slug === eventSlug)
+    || releases.find((item) => item.title === event?.title)
+    || null;
+  const title = event?.title || (release ? displayReleaseTitle(release) : fallback.title);
+  const href = event?.url || (release ? releaseDetailPath(release.slug) : fallback.href);
+  const image = release?.image || fallback.image;
+  const date = event?.date || release?.releaseDate || fallback.date;
+  const numericDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date))
+    ? String(date).split("-").reverse().join(".")
+    : String(date || "");
+  return `<a class="home-feature-release" href="${escapeAttr(href)}" data-featured-release aria-label="Open latest release: ${escapeAttr(title)}">
+      <span class="home-feature-kicker" data-i18n="home_feature_label">New release</span>
+      <span class="home-feature-art">
+        <img src="${escapeAttr(image)}" alt="${escapeAttr(title)} cover artwork" width="1200" height="1200" loading="eager" decoding="async" fetchpriority="high" data-featured-release-image>
+      </span>
+      <span class="home-feature-caption">
+        <strong data-featured-release-title>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(numericDate)}</small>
+        <span data-i18n="home_feature_action">Play release &nearr;</span>
+      </span>
+    </a>`;
+}
+
+function injectHomepageCatalogFallback(html, releases = [], catalog = readCatalogData()) {
   const events = validCatalogEvents(catalog);
   const counts = events.reduce((all, event) => {
     all[event.kind] = (all[event.kind] || 0) + 1;
@@ -310,6 +341,10 @@ function injectHomepageCatalogFallback(html, catalog = readCatalogData()) {
     .replace(
       /<a class="home-latest-card" href="[^"]*" data-latest-card="set"[\s\S]*?<\/a>/,
       renderLatestFallbackCard("set", latestSet)
+    )
+    .replace(
+      /<a class="home-feature-release" href="[^"]*" data-featured-release[\s\S]*?<\/a>/,
+      renderHomepageFeaturedRelease(latestRelease, releases)
     );
   const releaseCount = counts.release || 0;
   const setCount = counts.set || 0;
@@ -342,7 +377,7 @@ function injectCatalogDataIntoHomepage(releases, sets) {
 
   next = injectHomepageCoverWall(next, releases, sets);
   next = simplifyHomepageShell(next);
-  next = injectAssetVersions(injectHomepageCatalogFallback(next, catalog));
+  next = injectAssetVersions(injectHomepageCatalogFallback(next, releases, catalog));
   if (next !== current) writeFileAtomic(path.join(ROOT, "index.html"), next);
 }
 
@@ -668,7 +703,7 @@ function staticPageScript() {
 }());`;
 }
 
-function basePage({ title, description, canonical, label, h1, intro, body, jsonLd, activeNav, lang = "en", alternates = null, socialImage = `${SITE}/og-card.png`, socialImageWidth = 1200, socialImageHeight = 630, socialImageAlt = "BladesBeats official artist image" }) {
+function basePage({ title, description, canonical, label, h1, intro, body, jsonLd, activeNav, lang = "en", alternates = null, socialImage = `${SITE}/og-card.png`, socialImageWidth = 1200, socialImageHeight = 630, socialImageAlt = "BladesBeats official artist image", bodyClass = "", showPageHead = true }) {
   const css = extractHomepageCss();
   const alternateTags = renderAlternates(alternates);
   const locale = lang === "es" ? "es_ES" : "en_US";
@@ -776,6 +811,64 @@ body.static-page .story-copy{font-family:var(--font-body);font-size:22px;line-he
 body.static-page .story-intro{font-family:var(--font-display);font-size:clamp(28px,3.3vw,44px);line-height:1.18;color:var(--paper)}
 body.static-page .story-flow p{font-family:var(--font-body);font-size:clamp(17px,1.7vw,20px);line-height:1.72;color:var(--paper-2)}
 body.static-page .bb-contact-grid{width:min(1200px,calc(100% - var(--pad-page) * 2));max-width:1200px;margin:0 auto clamp(48px,8vw,96px)}
+body.release-page{--release-cyan:#1AD9FF;--release-pink:#F25ACD;background:#050713}
+body.release-page .site-nav{position:relative;z-index:20;background:rgba(5,7,19,.9);border-color:rgba(233,238,251,.12);backdrop-filter:blur(18px)}
+body.release-page .page-shell{overflow:hidden;background:#050713}
+body.release-page .release-poster{position:relative;min-height:calc(100svh - 61px);overflow:hidden;isolation:isolate;background:#050713}
+body.release-page .release-poster-backdrop{position:absolute;z-index:-3;inset:-12%;width:124%;height:124%;object-fit:cover;filter:blur(86px) saturate(1.2);opacity:.22;transform:scale(1.08)}
+body.release-page .release-poster::before{content:"";position:absolute;z-index:-2;inset:0;background:linear-gradient(96deg,rgba(5,7,19,.98) 2%,rgba(5,7,19,.78) 45%,rgba(5,7,19,.9) 100%),radial-gradient(80% 70% at 78% 28%,rgba(242,90,205,.13),transparent 64%)}
+body.release-page .release-poster::after{content:"";position:absolute;z-index:-1;inset:0;pointer-events:none;background:linear-gradient(rgba(233,238,251,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(233,238,251,.018) 1px,transparent 1px);background-size:86px 86px;mask-image:linear-gradient(180deg,#000,transparent 92%)}
+body.release-page .release-poster-inner{width:min(1440px,100%);min-height:inherit;margin:0 auto;padding:20px var(--pad-page) clamp(54px,7vw,98px);display:grid;align-content:center}
+body.release-page .release-poster .breadcrumb{width:100%;max-width:none;margin:0 0 clamp(34px,5vw,64px);padding:0;color:var(--paper-3)}
+body.release-page .release-poster-grid{display:grid;grid-template-columns:minmax(300px,.82fr) minmax(0,1.18fr);gap:clamp(42px,7vw,112px);align-items:center}
+body.release-page .release-poster-art{position:relative;min-width:0;isolation:isolate}
+body.release-page .release-poster-art::before{content:"";position:absolute;z-index:-1;inset:22px -14px -16px 24px;border:1px solid rgba(26,217,255,.7);transform:rotate(2deg)}
+body.release-page .release-poster-art::after{content:"";position:absolute;z-index:2;right:-18px;bottom:10%;width:52%;height:2px;background:linear-gradient(90deg,var(--release-pink),transparent);box-shadow:0 0 28px rgba(242,90,205,.72)}
+body.release-page .release-poster-art img{width:100%;height:auto;aspect-ratio:1;object-fit:cover;background:#000;border:1px solid rgba(233,238,251,.16);box-shadow:0 42px 110px rgba(0,0,0,.58);transform:rotate(-1deg)}
+body.release-page .release-poster-number{position:absolute;z-index:3;top:-16px;left:-16px;display:inline-flex;min-height:36px;align-items:center;padding:0 13px;background:var(--release-pink);color:#090B18;font-family:var(--font-mono);font-size:9px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;transform:rotate(-4deg)}
+body.release-page .release-poster-copy{min-width:0}
+body.release-page .release-poster-eyebrow{margin:0 0 22px;color:var(--release-cyan);font-family:var(--font-mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase}
+body.release-page .release-poster-title{max-width:900px;margin:0;color:var(--paper);font-family:var(--font-display);font-size:clamp(52px,7.4vw,116px);font-weight:700;letter-spacing:-.058em;line-height:.84;overflow-wrap:anywhere;text-wrap:balance}
+body.release-page .release-poster-date{display:flex;align-items:center;gap:14px;margin:24px 0 0;color:var(--paper-3);font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase}
+body.release-page .release-poster-date::before{content:"";width:54px;height:1px;background:var(--release-pink)}
+body.release-page .release-poster-lead{max-width:58ch;margin:28px 0 0;color:var(--paper-2);font-family:var(--font-body);font-size:clamp(16px,1.5vw,19px);line-height:1.65}
+body.release-page .release-poster-actions{display:grid;grid-template-columns:minmax(210px,.7fr) minmax(0,1fr);gap:18px;align-items:stretch;margin-top:34px}
+body.release-page .release-poster-primary{display:grid;align-content:center;gap:3px;min-height:76px;padding:14px 20px;background:linear-gradient(105deg,var(--release-cyan),#5FB5FF 72%,var(--release-pink) 150%);clip-path:polygon(0 0,calc(100% - 15px) 0,100% 15px,100% 100%,15px 100%,0 calc(100% - 15px));color:#090B18;text-decoration:none;transition:transform .22s var(--ease),filter .22s var(--ease)}
+body.release-page .release-poster-primary:hover,body.release-page .release-poster-primary:focus-visible{transform:translateY(-3px);filter:brightness(1.1)}
+body.release-page .release-poster-primary span{font-family:var(--font-mono);font-size:8px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}
+body.release-page .release-poster-primary strong{font-family:var(--font-display);font-size:21px;line-height:1.05}
+body.release-page .release-poster-services{display:flex;flex-wrap:wrap;align-content:center;gap:8px 16px;border-top:1px solid var(--night-line);border-bottom:1px solid var(--night-line);padding:12px 0}
+body.release-page .release-poster-services a{color:var(--paper-2);font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:.16em;text-decoration:none;text-transform:uppercase}
+body.release-page .release-poster-services a:hover,body.release-page .release-poster-services a:focus-visible{color:var(--release-cyan)}
+body.release-page .release-editorial{background:var(--paper);color:#090B18}
+body.release-page .release-editorial-inner{width:min(1240px,100%);margin:0 auto;padding:clamp(60px,9vw,120px) var(--pad-page);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:clamp(42px,8vw,116px);align-items:start}
+body.release-page .release-editorial-kicker{margin:0 0 22px;color:#43506c;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.24em;text-transform:uppercase}
+body.release-page .release-editorial h2{max-width:720px;margin:0;color:#090B18;font-family:var(--font-display);font-size:clamp(36px,5.2vw,72px);font-weight:700;letter-spacing:-.045em;line-height:.92;text-wrap:balance}
+body.release-page .release-editorial-copy{max-width:62ch;margin:30px 0 0;color:#30384d;font-size:clamp(17px,1.7vw,20px);line-height:1.75}
+body.release-page .release-editorial-meta{margin:22px 0 0;color:#43506c;font-family:var(--font-mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+body.release-page .release-editorial-meta span{color:#090B18;font-weight:800}
+body.release-page .release-editorial .gig-facts{grid-template-columns:1fr;margin:0;background:rgba(9,11,24,.16);border-color:rgba(9,11,24,.16)}
+body.release-page .release-editorial .gig-facts div{display:grid;grid-template-columns:minmax(100px,.55fr) minmax(0,1fr);gap:20px;align-items:baseline;background:var(--paper);padding:17px 0}
+body.release-page .release-editorial .gig-facts dt{color:#5c667e}
+body.release-page .release-editorial .gig-facts dd{margin:0;color:#090B18;font-family:var(--font-display);font-size:18px;font-weight:700;text-align:right;overflow-wrap:anywhere}
+body.release-page .release-editorial-media{grid-column:1/-1;margin-top:clamp(4px,3vw,30px)}
+body.release-page .release-editorial .embed{border-color:#090B18;box-shadow:0 28px 80px rgba(9,11,24,.18)}
+body.release-page .release-editorial .embed-consent{background:#090B18;color:var(--paper)}
+body.release-page .release-neighbors{background:#050713;border-top:1px solid var(--night-line)}
+body.release-page .release-neighbors-inner{width:min(1400px,100%);margin:0 auto;padding:clamp(42px,6vw,74px) var(--pad-page);display:grid;grid-template-columns:1fr auto 1fr;gap:22px;align-items:stretch}
+body.release-page .release-neighbor{min-width:0;display:grid;align-content:space-between;gap:14px;padding:18px 0;border-top:1px solid var(--night-line);border-bottom:1px solid var(--night-line);color:var(--paper);text-decoration:none;transition:padding .22s var(--ease),border-color .22s var(--ease)}
+body.release-page .release-neighbor:hover,body.release-page .release-neighbor:focus-visible{padding-left:8px;padding-right:8px;border-color:var(--release-cyan)}
+body.release-page .release-neighbor.next{text-align:right}
+body.release-page .release-neighbor span,body.release-page .release-catalog-link{color:var(--paper-3);font-family:var(--font-mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase}
+body.release-page .release-neighbor strong{font-family:var(--font-display);font-size:clamp(18px,2vw,26px);line-height:1.05;overflow-wrap:anywhere}
+body.release-page .release-catalog-link{display:inline-flex;align-items:center;justify-content:center;padding:0 18px;color:var(--release-cyan);text-decoration:none;white-space:nowrap}
+body.release-page .release-catalog-link:hover{color:var(--paper)}
+@media(max-width:980px){
+  body.release-page .release-poster-grid{grid-template-columns:minmax(240px,.72fr) minmax(0,1.28fr);gap:42px}
+  body.release-page .release-poster-title{font-size:clamp(48px,7vw,72px)}
+  body.release-page .release-poster-actions{grid-template-columns:1fr}
+  body.release-page .release-editorial-inner{grid-template-columns:1fr;gap:44px}
+}
 @media(max-width:1120px){
   body.static-page .booking-layout{grid-template-columns:minmax(0,1fr) minmax(280px,.72fr)}
   body.static-page .booking-main{border-right:1px solid var(--night-line);border-bottom:0}
@@ -788,6 +881,21 @@ body.static-page .bb-contact-grid{width:min(1200px,calc(100% - var(--pad-page) *
   body.static-page .booking-main{border-right:0;border-bottom:1px solid var(--night-line)}
 }
 @media(max-width:720px){
+  body.release-page .release-poster{min-height:0}
+  body.release-page .release-poster-inner{padding-top:18px;padding-bottom:70px}
+  body.release-page .release-poster .breadcrumb{margin-bottom:42px}
+  body.release-page .release-poster-grid{grid-template-columns:1fr;gap:54px}
+  body.release-page .release-poster-art{width:calc(100% - 16px);margin-left:16px}
+  body.release-page .release-poster-title{font-size:clamp(50px,15vw,76px)}
+  body.release-page .release-poster-actions{margin-top:28px}
+  body.release-page .release-poster-services{padding:16px 0}
+  body.release-page .release-editorial-inner{padding-top:64px;padding-bottom:64px}
+  body.release-page .release-editorial h2{font-size:clamp(36px,11vw,52px)}
+  body.release-page .release-editorial .gig-facts div{grid-template-columns:1fr;gap:6px}
+  body.release-page .release-editorial .gig-facts dd{text-align:left}
+  body.release-page .release-neighbors-inner{grid-template-columns:1fr;gap:12px}
+  body.release-page .release-neighbor.next{text-align:left}
+  body.release-page .release-catalog-link{min-height:48px;justify-content:flex-start;padding:0}
   body.static-page{overflow-x:hidden}
   body.static-page .page,
   body.static-page .page-shell,
@@ -862,7 +970,7 @@ ${hasContactForm ? `<script src="https://challenges.cloudflare.com/turnstile/v0/
 ${jsonLd ? renderJsonLd(jsonLd) : ""}
 <link rel="stylesheet" href="${generatedStylesHref}">
 </head>
-<body class="static-page subpage">
+<body class="static-page subpage${bodyClass ? ` ${escapeAttr(bodyClass)}` : ""}">
 <a class="skip-link" href="#main">${lang === "es" ? "Saltar al contenido" : "Skip to content"}</a>
 <div class="site-shell">
   <header class="site-nav" role="banner">
@@ -874,14 +982,14 @@ ${jsonLd ? renderJsonLd(jsonLd) : ""}
   </header>
   <main class="page active" id="main">
     <div class="page-shell">
-      <section class="page-head">
+      ${showPageHead ? `<section class="page-head">
         <p class="page-eyebrow">${escapeHtml(label)}</p>
         <div>
           <h1 class="page-title">${escapeHtml(displayH1)}<span class="page-title-dot">.</span></h1>
           <span class="page-rule" aria-hidden="true"></span>
           <p class="page-subtitle">${escapeHtml(intro)}</p>
         </div>
-      </section>
+      </section>` : ""}
       ${body}
     </div>
   </main>
@@ -1422,7 +1530,36 @@ ${platformCatalog(releases, sets, "en")}`
   });
 }
 
-function buildReleasePage(release, lang = "en") {
+function releaseNeighborNav(release, releases, lang = "en") {
+  const isEs = lang === "es";
+  const ordered = [...releases].sort((a, b) => (
+    String(b.releaseDate || b.lastmod || "").localeCompare(String(a.releaseDate || a.lastmod || ""))
+      || displayReleaseTitle(a).localeCompare(displayReleaseTitle(b))
+  ));
+  const index = ordered.findIndex((item) => item.slug === release.slug);
+  const newer = index > 0 ? ordered[index - 1] : null;
+  const older = index >= 0 && index < ordered.length - 1 ? ordered[index + 1] : null;
+  const neighbor = (item, direction) => {
+    if (!item) return `<span class="release-neighbor-space" aria-hidden="true"></span>`;
+    const isNewer = direction === "newer";
+    const label = isNewer
+      ? (isEs ? "Lanzamiento más reciente" : "Newer release")
+      : (isEs ? "Lanzamiento anterior" : "Older release");
+    return `<a class="release-neighbor ${isNewer ? "previous" : "next"}" href="${escapeAttr(releaseDetailPath(item.slug, lang))}">
+      <span>${isNewer ? "&larr; " : ""}${label}${isNewer ? "" : " &rarr;"}</span>
+      <strong>${escapeHtml(displayReleaseTitle(item))}</strong>
+    </a>`;
+  };
+  return `<nav class="release-neighbors" aria-label="${isEs ? "Explorar lanzamientos" : "Browse releases"}">
+    <div class="release-neighbors-inner">
+      ${neighbor(newer, "newer")}
+      <a class="release-catalog-link" href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Todo el catálogo" : "Full catalog"}</a>
+      ${neighbor(older, "older")}
+    </div>
+  </nav>`;
+}
+
+function buildReleasePage(release, lang = "en", releases = [release]) {
   const isEs = lang === "es";
   const detailUrl = releaseDetailUrl(release.slug, lang);
   const title = displayReleaseTitle(release);
@@ -1437,9 +1574,7 @@ function buildReleasePage(release, lang = "en") {
     : `${verb} ${title} by BladesBeats. Official release page with ${hasSearchRoutes ? "direct links and title searches" : "verified direct platform links"}${year ? ` for this ${year} release` : ""}.`.slice(0, 155);
   const image = release.image || `${SITE}/og-card.png`;
   const socialDimensions = socialImageDimensions(image, { width: 1200, height: 1200 });
-  const releaseCopy = isEs
-    ? releaseSummary(release, lang)
-    : (release.longDescription || releaseSummary(release, lang));
+  const heroCopy = releaseSummary(release, lang);
   const publishedDate = formatReleaseDate(release.releaseDate, lang) || year;
   const directPlatformNames = routes.filter((route) => route.direct).map((route) => labelForLink(route.key));
   const releaseFacts = [
@@ -1449,34 +1584,70 @@ function buildReleasePage(release, lang = "en") {
     [isEs ? "Enlaces oficiales" : "Official links", directPlatformNames.join(", ")]
   ].filter(([, value]) => value);
   const platformCopy = isYoutubeOnlyRelease(release)
-    ? (isEs ? `Ver ${escapeHtml(title)} en el enlace verificado de YouTube.` : `Watch ${escapeHtml(title)} on the verified YouTube link below.`)
+    ? (isEs ? `La portada, los datos del lanzamiento y el enlace verificado de YouTube para ${title} están reunidos en esta página.` : `The artwork, release information and verified YouTube link for ${title} are collected on this page.`)
     : hasSearchRoutes
-      ? (isEs ? `Enlaces directos y búsquedas por título para ${escapeHtml(title)}.` : `Direct links and title searches for ${escapeHtml(title)} are collected below.`)
-      : (isEs ? `Enlaces directos verificados para ${escapeHtml(title)}.` : `Verified direct platform links for ${escapeHtml(title)} are collected below.`);
-  const body = `<nav class="breadcrumb" aria-label="Breadcrumb">
-  <ol>
-    <li><a href="/">BladesBeats</a></li>
-    <li><a href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Música" : "Music"}</a></li>
-    <li aria-current="page">${escapeHtml(title)}</li>
-  </ol>
-</nav>
-<article class="release-detail">
-  <div class="release-detail-cover">
-    <img src="${escapeAttr(image)}"${responsiveImageAttributes(image, "(max-width: 720px) calc(100vw - 40px), (max-width: 1200px) 45vw, 520px")} alt="${escapeAttr(title)} cover artwork" width="800" height="800" loading="eager" decoding="async" fetchpriority="high">
+      ? (isEs ? `La portada, los datos del lanzamiento, los enlaces directos y las búsquedas por título para ${title} están reunidos en esta página.` : `The artwork, release information, direct links and title searches for ${title} are collected on this page.`)
+      : (isEs ? `La portada, los datos del lanzamiento y los enlaces directos verificados para ${title} están reunidos en esta página.` : `The artwork, release information and verified direct platform links for ${title} are collected on this page.`);
+  const releaseCopy = isEs
+    ? platformCopy
+    : (release.longDescription || platformCopy);
+  const primaryRoute = routes.find((route) => route.direct) || routes[0] || null;
+  const primaryLabel = isYoutubeOnlyRelease(release)
+    ? (isEs ? "Ver ahora" : "Watch now")
+    : (isEs ? "Escuchar ahora" : "Listen now");
+  const sortedReleases = [...releases].sort((a, b) => (
+    String(b.releaseDate || b.lastmod || "").localeCompare(String(a.releaseDate || a.lastmod || ""))
+      || displayReleaseTitle(a).localeCompare(displayReleaseTitle(b))
+  ));
+  const posterIndex = Math.max(0, sortedReleases.findIndex((item) => item.slug === release.slug)) + 1;
+  const body = `<article class="release-poster">
+  <img class="release-poster-backdrop" src="${escapeAttr(image)}" alt="" aria-hidden="true" width="800" height="800" decoding="async">
+  <div class="release-poster-inner">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="${isEs ? "/es/" : "/"}">BladesBeats</a></li>
+        <li><a href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Música" : "Music"}</a></li>
+        <li aria-current="page">${escapeHtml(title)}</li>
+      </ol>
+    </nav>
+    <div class="release-poster-grid">
+      <div class="release-poster-art">
+        <span class="release-poster-number">BB / ${String(posterIndex).padStart(2, "0")}</span>
+        <img src="${escapeAttr(image)}"${responsiveImageAttributes(image, "(max-width: 720px) calc(100vw - 64px), (max-width: 1200px) 38vw, 560px")} alt="${escapeAttr(title)} cover artwork" width="800" height="800" loading="eager" decoding="async" fetchpriority="high">
+      </div>
+      <div class="release-poster-copy">
+        <p class="release-poster-eyebrow">${escapeHtml(year || (isEs ? "Lanzamiento" : "Release"))} &middot; ${escapeHtml(releaseTypeLabel(release.type, lang))}</p>
+        <h1 class="release-poster-title">${escapeHtml(title)}</h1>
+        <p class="release-poster-date">${escapeHtml(publishedDate)}</p>
+        <p class="release-poster-lead">${escapeHtml(heroCopy)}</p>
+        <div class="release-poster-actions">
+          <a class="release-poster-primary" href="${escapeAttr(primaryRoute?.href || (isEs ? "/es/musica/" : "/music/"))}"${primaryRoute ? ' target="_blank" rel="noopener noreferrer"' : ""}>
+            <span>${primaryLabel}</span>
+            <strong>${escapeHtml(primaryRoute ? labelForLink(primaryRoute.key) : (isEs ? "Todo el catálogo" : "Full catalog"))} &nearr;</strong>
+          </a>
+          ${routes.length ? `<div class="release-poster-services" aria-label="${isEs ? "Plataformas" : "Platforms"}">
+            ${routes.map((route) => `<a href="${escapeAttr(route.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(labelForLink(route.key))}</a>`).join("\n            ")}
+          </div>` : ""}
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="release-detail-body">
-    <p class="page-eyebrow">${escapeHtml(year || (isEs ? "Lanzamiento" : "Release"))} &middot; ${escapeHtml(releaseTypeLabel(release.type, lang))}</p>
-    <p class="release-detail-text">${escapeHtml(releaseCopy)}</p>
+</article>
+<section class="release-editorial" aria-labelledby="release-editorial-title">
+  <div class="release-editorial-inner">
+    <div>
+      <p class="release-editorial-kicker">${isEs ? "Detalles del lanzamiento" : "Release notes"}</p>
+      <h2 id="release-editorial-title">${isEs ? "Sobre" : "About"} &ldquo;${escapeHtml(title)}&rdquo;</h2>
+      <p class="release-editorial-copy">${escapeHtml(releaseCopy)}</p>
+      ${Array.isArray(release.featuredArtists) && release.featuredArtists.length ? `<p class="release-editorial-meta"><span>${isEs ? "Con" : "With"}</span> ${escapeHtml(release.featuredArtists.join(", "))}</p>` : ""}
+    </div>
     <dl class="gig-facts">
       ${releaseFacts.map(([factLabel, factValue]) => `<div><dt>${escapeHtml(factLabel)}</dt><dd>${escapeHtml(factValue)}</dd></div>`).join("\n      ")}
     </dl>
-    ${youtubeEmbedPlaceholder(release, lang)}
-    <p class="release-detail-text">${platformCopy}</p>
-    ${Array.isArray(release.featuredArtists) && release.featuredArtists.length ? `<p class="release-detail-meta"><span>${isEs ? "Con" : "With"}</span> ${escapeHtml(release.featuredArtists.join(", "))}</p>` : ""}
-    ${releasePlatformPanel(release, lang, routes)}
-    <p><a class="back-link" href="${isEs ? "/es/musica/" : "/music/"}">&larr; ${isEs ? "Volver a música" : "Back to releases"}</a></p>
+    ${youtubeEmbedUrl(release) ? `<div class="release-editorial-media">${youtubeEmbedPlaceholder(release, lang)}</div>` : ""}
   </div>
-</article>`;
+</section>
+${releaseNeighborNav(release, releases, lang)}`;
   return basePage({
     title: isEs ? `${escapeHtml(title)} | Lanzamiento oficial de BladesBeats` : `${escapeHtml(title)} | Official BladesBeats Release`,
     description,
@@ -1492,7 +1663,9 @@ function buildReleasePage(release, lang = "en") {
     socialImage: image,
     socialImageWidth: socialDimensions.width,
     socialImageHeight: socialDimensions.height,
-    socialImageAlt: `${title} cover artwork`
+    socialImageAlt: `${title} cover artwork`,
+    bodyClass: "release-page",
+    showPageHead: false
   });
 }
 
@@ -2392,7 +2565,9 @@ const SPANISH_HOMEPAGE_COPY = {
   nav_booking: "Contacto",
   home_hero_eyebrow: "Oslo &middot; Sevilla &middot; <b>2017-actualidad</b>",
   home_hero_subtitle: "DJ y productor basado en Sevilla, con raíces en Oslo y un catálogo en crecimiento de lanzamientos, sesiones y bolos.",
-  home_hero_cta: "&rarr; Escucha en todas las plataformas",
+  home_hero_cta: "Escucha el último lanzamiento &nearr;",
+  home_feature_label: "Nuevo lanzamiento",
+  home_feature_action: "Escuchar &nearr;",
   home_latest_label: "Últimos del catálogo",
   home_latest_release: "Último lanzamiento",
   home_latest_set: "Última sesión",
@@ -2451,6 +2626,7 @@ function buildSpanishHomePage() {
     .replaceAll('"url": "/gigs/', '"url": "/es/eventos/')
     .replaceAll('href="/about/"', 'href="/es/sobre-bladesbeats/"')
     .replaceAll('href="/booking/"', 'href="/es/contratar-dj-sevilla/"')
+    .replace(/aria-label="Open latest release: ([^"]+)"/, 'aria-label="Abrir el último lanzamiento: $1"')
     .replaceAll('href="/legal-notice/"', 'href="/aviso-legal/"')
     .replaceAll('href="/privacy-policy/"', 'href="/politica-privacidad/"')
     .replaceAll('href="/cookie-policy/"', 'href="/politica-cookies/"')
@@ -2887,8 +3063,8 @@ function main() {
     const urlEs = releaseDetailUrl(release.slug, "es");
     generatedReleaseUrls.set(release.slug, url);
     generatedReleaseUrlsEs.set(release.slug, urlEs);
-    const html = buildReleasePage(release, "en");
-    const htmlEs = buildReleasePage(release, "es");
+    const html = buildReleasePage(release, "en", releases);
+    const htmlEs = buildReleasePage(release, "es", releases);
     validatePageHtml(html, `music/${release.slug}`);
     validatePageHtml(htmlEs, `es/musica/${release.slug}`);
     musicFiles.push([path.join(release.slug, "index.html"), html]);

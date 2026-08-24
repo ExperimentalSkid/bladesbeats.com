@@ -169,6 +169,37 @@ function validateHomepageCoverWall(relative) {
   }
 }
 
+function expectedFeaturedRelease() {
+  return JSON.parse(read("data/releases.json"))
+    .filter((release) => {
+      const links = release.links || {};
+      return release.status === "official"
+        && release.image
+        && (release.appleMusicUrl || links.appleMusic || release.spotifyUrl || links.spotify);
+    })
+    .sort((a, b) => String(b.releaseDate || b.lastmod || "").localeCompare(String(a.releaseDate || a.lastmod || "")))[0] || null;
+}
+
+function validateHomepageFeaturedRelease(relative, languagePath) {
+  const homepage = read(relative);
+  const release = expectedFeaturedRelease();
+  if (!release) {
+    fail(`${relative}: no eligible featured release found in release data`);
+    return;
+  }
+  const href = `${languagePath}${release.slug}/`;
+  const match = homepage.match(/<a class="home-feature-release" href="([^"]+)" data-featured-release[\s\S]*?data-featured-release-title>([^<]+)<\/strong>[\s\S]*?<\/a>/);
+  if (!match) {
+    fail(`${relative}: missing featured release block`);
+    return;
+  }
+  if (match[1] !== href) fail(`${relative}: featured release points to ${match[1]} instead of ${href}`);
+  if (match[2] !== release.title) fail(`${relative}: featured release title is stale`);
+  if (!homepage.includes(`src="${release.image}"`) || !homepage.includes("data-featured-release-image")) {
+    fail(`${relative}: featured release artwork is missing or stale`);
+  }
+}
+
 for (const required of [
   "index.html",
   "404.html",
@@ -197,6 +228,8 @@ for (const relative of htmlFiles) {
 
 validateHomepageCoverWall("index.html");
 validateHomepageCoverWall("es/index.html");
+validateHomepageFeaturedRelease("index.html", "/music/");
+validateHomepageFeaturedRelease("es/index.html", "/es/musica/");
 
 for (const [relative, expectedCta, expectedLanguage] of [
   ["index.html", "/music/", /<a class="site-nav-lang" href="\/es\/" hreflang="es"/],
@@ -213,6 +246,16 @@ for (const [relative, expectedCta, expectedLanguage] of [
   if (/data-contact-form|api\.ipify\.org|challenges\.cloudflare\.com\/turnstile/.test(homepage)) {
     fail(`${relative}: hidden contact-form dependency remains`);
   }
+}
+
+for (const relative of htmlFiles.filter((file) => /^(?:music|es\/musica)\/[^/]+\/index\.html$/.test(file))) {
+  const html = read(relative);
+  const h1Count = (html.match(/<h1\b/g) || []).length;
+  if (!/<body class="static-page subpage release-page">/.test(html)) fail(`${relative}: release poster body class is missing`);
+  if (!/<h1 class="release-poster-title">/.test(html)) fail(`${relative}: release poster title is missing`);
+  if (h1Count !== 1) fail(`${relative}: release page has ${h1Count} h1 elements instead of 1`);
+  if (!/<section class="release-editorial"/.test(html)) fail(`${relative}: release editorial section is missing`);
+  if (!/<nav class="release-neighbors"/.test(html)) fail(`${relative}: adjacent-release navigation is missing`);
 }
 
 for (const relative of ["assets/js/contact-form.js", "workers/contact-worker.js", "scripts/build-pages.js"]) {
