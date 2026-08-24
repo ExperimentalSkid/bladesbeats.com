@@ -313,7 +313,7 @@ function renderHomepageFeaturedRelease(event, releases = []) {
       <span class="home-feature-caption">
         <strong data-featured-release-title>${escapeHtml(title)}</strong>
         <small>${escapeHtml(numericDate)}</small>
-        <span data-i18n="home_feature_action">Play release &nearr;</span>
+        <span data-i18n="home_feature_action">Open release &nearr;</span>
       </span>
     </a>`;
 }
@@ -933,14 +933,14 @@ body.release-page .release-poster-services{display:flex;flex-wrap:wrap;align-con
 body.release-page .release-poster-services a{color:var(--paper-2);font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:.16em;text-decoration:none;text-transform:uppercase}
 body.release-page .release-poster-services a:hover,body.release-page .release-poster-services a:focus-visible{color:var(--release-cyan)}
 body.release-page .release-editorial{background:var(--paper);color:#090B18}
-body.release-page .release-editorial-inner{width:min(1240px,100%);margin:0 auto;padding:clamp(60px,9vw,120px) var(--pad-page);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:clamp(42px,8vw,116px);align-items:start}
-body.release-page .release-editorial-kicker{margin:0 0 22px;color:#43506c;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.24em;text-transform:uppercase}
-body.release-page .release-editorial h2{max-width:720px;margin:0;color:#090B18;font-family:var(--font-display);font-size:clamp(36px,5.2vw,72px);font-weight:700;letter-spacing:-.045em;line-height:.92;text-wrap:balance}
-body.release-page .release-editorial-copy{max-width:62ch;margin:30px 0 0;color:#30384d;font-size:clamp(17px,1.7vw,20px);line-height:1.75}
+body.release-page .release-editorial-inner{width:min(1180px,100%);margin:0 auto;padding:clamp(64px,7vw,92px) var(--pad-page);display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.76fr);gap:clamp(48px,6vw,80px);align-items:center}
+body.release-page .release-editorial-kicker{margin:0 0 16px;color:#43506c;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.24em;text-transform:uppercase}
+body.release-page .release-editorial h2{max-width:620px;margin:0;color:#090B18;font-family:var(--font-display);font-size:clamp(40px,4.4vw,58px);font-weight:700;letter-spacing:-.035em;line-height:.98;text-wrap:balance}
+body.release-page .release-editorial-copy{max-width:52ch;margin:22px 0 0;color:#30384d;font-size:clamp(16px,1.45vw,18px);line-height:1.68}
 body.release-page .release-editorial-meta{margin:22px 0 0;color:#43506c;font-family:var(--font-mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase}
 body.release-page .release-editorial-meta span{color:#090B18;font-weight:800}
 body.release-page .release-editorial .gig-facts{grid-template-columns:1fr;margin:0;background:rgba(9,11,24,.16);border-color:rgba(9,11,24,.16)}
-body.release-page .release-editorial .gig-facts div{display:grid;grid-template-columns:minmax(100px,.55fr) minmax(0,1fr);gap:20px;align-items:baseline;background:var(--paper);padding:17px 0}
+body.release-page .release-editorial .gig-facts div{display:grid;grid-template-columns:minmax(100px,.55fr) minmax(0,1fr);gap:20px;align-items:baseline;background:var(--paper);padding:16px 18px}
 body.release-page .release-editorial .gig-facts dt{color:#5c667e}
 body.release-page .release-editorial .gig-facts dd{margin:0;color:#090B18;font-family:var(--font-display);font-size:18px;font-weight:700;text-align:right;overflow-wrap:anywhere}
 body.release-page .release-editorial-media{grid-column:1/-1;margin-top:clamp(4px,3vw,30px)}
@@ -1056,7 +1056,7 @@ body.release-page .release-editorial-copy{line-height:1.75}
   body.release-page .release-poster-actions{margin-top:28px}
   body.release-page .release-poster-services{padding:16px 0}
   body.release-page .release-editorial-inner{padding-top:64px;padding-bottom:64px}
-  body.release-page .release-editorial h2{font-size:clamp(36px,11vw,52px)}
+  body.release-page .release-editorial h2{font-size:clamp(34px,10vw,46px)}
   body.release-page .release-editorial .gig-facts div{grid-template-columns:1fr;gap:6px}
   body.release-page .release-editorial .gig-facts dd{text-align:left}
   body.release-page .release-neighbors-inner{grid-template-columns:1fr;gap:12px}
@@ -1789,8 +1789,10 @@ function buildReleasePage(release, lang = "en", releases = [release]) {
   const title = displayReleaseTitle(release);
   const year = itemYear(release);
   const routes = releasePlatformRoutes(release, lang);
-  const hasSearchRoutes = routes.some((route) => !route.direct);
   const formatLabel = releaseTypeLabel(release.type, lang);
+  const factFormatLabel = formatLabel
+    ? `${formatLabel.charAt(0).toLocaleUpperCase(isEs ? "es-ES" : "en-GB")}${formatLabel.slice(1)}`
+    : formatLabel;
   const publishedDate = formatReleaseDate(release.releaseDate, lang) || year;
   const verb = isYoutubeOnlyRelease(release)
     ? (isEs ? "Ver" : "Watch")
@@ -1803,17 +1805,32 @@ function buildReleasePage(release, lang = "en", releases = [release]) {
   const heroCopy = releaseSummary(release, lang);
   const coverAlt = isEs ? `Portada de ${title}` : `${title} cover artwork`;
   const directPlatformNames = routes.filter((route) => route.direct).map((route) => labelForLink(route.key));
+  const searchPlatformNames = routes.filter((route) => !route.direct).map((route) => labelForLink(route.key));
   const releaseFacts = [
     [isEs ? "Publicado" : "Released", publishedDate],
-    [isEs ? "Formato" : "Format", releaseTypeLabel(release.type, lang)],
+    [isEs ? "Formato" : "Format", factFormatLabel],
     [isEs ? "Artista" : "Artist", release.artist || "BladesBeats"],
     [isEs ? "Enlaces oficiales" : "Official links", directPlatformNames.join(", ")]
   ].filter(([, value]) => value);
+  const directLinkCopy = directPlatformNames.length
+    ? (isEs
+      ? `Abre ${directPlatformNames.length === 1 ? "el enlace verificado de" : "los enlaces verificados de"} ${naturalList(directPlatformNames, lang)}`
+      : `Open the verified ${naturalList(directPlatformNames, lang)} ${directPlatformNames.length === 1 ? "link" : "links"}`)
+    : "";
+  const searchLinkCopy = searchPlatformNames.length
+    ? (isEs
+      ? `busca el título exacto en ${naturalList(searchPlatformNames, lang)}`
+      : `search for the exact title on ${naturalList(searchPlatformNames, lang)}`)
+    : "";
   const platformCopy = isYoutubeOnlyRelease(release)
-    ? (isEs ? "Mira la publicación oficial de YouTube y consulta la portada, la fecha y el formato en un solo lugar." : "Watch the official YouTube upload and view the artwork, release date, and format in one place.")
-    : hasSearchRoutes
-      ? (isEs ? "Usa los enlaces directos disponibles o busca el título exacto en las plataformas compatibles." : "Use the verified direct links where available, or search by the exact title on supported platforms.")
-      : (isEs ? "Abre los enlaces verificados del lanzamiento y consulta su portada, fecha y formato." : "Open the verified platform links for this release and view its artwork, date, and format.");
+    ? (isEs ? "Mira la publicación oficial mediante el enlace verificado de YouTube." : "Watch the official upload through the verified YouTube link.")
+    : directLinkCopy && searchLinkCopy
+      ? `${directLinkCopy}, ${isEs ? "o" : "or"} ${searchLinkCopy}.`
+      : directLinkCopy
+        ? `${directLinkCopy} ${isEs ? "para escuchar este lanzamiento" : "for this release"}.`
+        : searchLinkCopy
+          ? `${isEs ? "Busca" : "Search"}${searchLinkCopy.slice(isEs ? 5 : 6)}.`
+          : (isEs ? "Consulta la portada, la fecha y el formato de este lanzamiento." : "View the artwork, date, and format for this release.");
   const releaseCopy = isEs
     ? platformCopy
     : (release.longDescription || platformCopy);
@@ -1862,8 +1879,8 @@ function buildReleasePage(release, lang = "en", releases = [release]) {
 <section class="release-editorial" aria-labelledby="release-editorial-title">
   <div class="release-editorial-inner">
     <div>
-      <p class="release-editorial-kicker">${isEs ? "Lanzamiento oficial" : "Official release"}</p>
-      <h2 id="release-editorial-title">${escapeHtml(verb)} &ldquo;${escapeHtml(title)}&rdquo;</h2>
+      <p class="release-editorial-kicker">${isEs ? "Detalles del lanzamiento" : "Release details"}</p>
+      <h2 id="release-editorial-title">${isYoutubeOnlyRelease(release) ? (isEs ? "Dónde verlo" : "Where to watch") : (isEs ? "Dónde escucharlo" : "Where to listen")}</h2>
       <p class="release-editorial-copy">${escapeHtml(releaseCopy)}</p>
       ${Array.isArray(release.featuredArtists) && release.featuredArtists.length ? `<p class="release-editorial-meta"><span>${isEs ? "Con" : "With"}</span> ${escapeHtml(release.featuredArtists.join(", "))}</p>` : ""}
     </div>
