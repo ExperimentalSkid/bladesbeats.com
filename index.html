@@ -214,7 +214,7 @@ button{font:inherit;color:inherit}
 .timeline{display:grid;gap:1px;border:1px solid var(--line);background:var(--line)}
 .timeline-item{display:grid;grid-template-columns:86px 1fr;gap:20px;background:var(--ink-2);padding:22px}
 .timeline-item b{color:var(--accent);font-family:"JetBrains Mono",monospace;font-size:12px}
-.timeline-item h3{font-size:22px}
+.timeline-item h2{font-size:22px}
 .timeline-item p{margin-top:8px;color:var(--muted);font-size:15px;line-height:1.65}
 .appearances-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,360px));justify-content:start;gap:16px}
 .appearance-card{min-height:420px;border:1px solid var(--line);background:rgba(16,16,16,.88);padding:14px;text-decoration:none;display:grid;grid-template-rows:auto 1fr;gap:14px;align-items:start;transition:background .2s ease,border-color .2s ease,color .2s ease}
@@ -1694,6 +1694,113 @@ body::before{
 }
 .site-footer-base p{
   margin:0;
+}
+
+/* Coherent editorial typography across home and generated pages. */
+:where(h1,h2,h3,h4){
+  text-wrap:balance;
+}
+:where(p,li,dd,figcaption){
+  text-wrap:pretty;
+}
+.home-hero-title{
+  line-height:.86;
+  letter-spacing:-.048em;
+}
+.home-hero-subtitle{
+  max-width:48ch;
+  line-height:1.62;
+}
+.home-hero-eyebrow,
+.home-latest-label,
+.home-latest-card span,
+.home-feature-kicker,
+.home-feature-caption small,
+.home-feature-caption span,
+.catalog-card-kind,
+.catalog-card-meta,
+.catalog-legend,
+.home-hero-foot-meta,
+.page-eyebrow,
+.release-card-meta,
+.release-card-platforms,
+.platform-count,
+.platform-card-action,
+.platform-entry-meta,
+.breadcrumb,
+.release-detail-meta,
+.release-platform-link span,
+.gig-facts dt,
+.site-footer-label,
+.site-footer-base{
+  line-height:1.45;
+  letter-spacing:.14em;
+}
+.home-hero-eyebrow,
+.home-latest-label,
+.catalog-card-kind,
+.catalog-card-meta,
+.catalog-legend,
+.home-hero-foot-meta,
+.page-eyebrow,
+.release-card-meta,
+.release-card-platforms,
+.platform-count,
+.platform-card-action,
+.platform-entry-meta,
+.breadcrumb,
+.release-detail-meta,
+.release-platform-link span,
+.gig-facts dt,
+.site-footer-label,
+.site-footer-base{
+  font-size:11px;
+}
+.home-feature-kicker,
+.home-feature-caption small,
+.home-feature-caption span,
+.home-latest-card span{
+  font-size:10px;
+}
+.page-title{
+  max-width:18ch;
+  line-height:.98;
+  letter-spacing:-.025em;
+}
+.page-subtitle{
+  max-width:58ch;
+  line-height:1.65;
+}
+.catalog-section-head h2{
+  max-width:18ch;
+  line-height:1.04;
+}
+.catalog-section-head p,
+.platform-card-copy,
+.release-card-copy,
+.appearance-summary,
+.release-detail-text,
+.site-footer-tagline{
+  line-height:1.65;
+}
+.release-card-title,
+.platform-name,
+.platform-entry-title,
+.catalog-card-title,
+.appearance-title,
+.timeline-item h2{
+  line-height:1.18;
+}
+.release-poster-title{
+  line-height:.9;
+  letter-spacing:-.045em;
+}
+.release-poster-lead,
+.release-editorial-copy,
+.detail-main,
+.story-flow p,
+.legal-section p{
+  max-width:68ch;
 }
 @media(max-width:720px){
   .release-detail{

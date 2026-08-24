@@ -858,7 +858,7 @@ body.static-page .timeline-item{display:grid;grid-template-columns:80px 1fr;gap:
 body.static-page .timeline-item b,
 body.static-page .side-project span,
 body.static-page .contact-line span:first-child{font-family:var(--font-mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--paper-3)}
-body.static-page .timeline-item h3{font-family:var(--font-display);font-size:22px;margin:0 0 6px;color:var(--paper)}
+  body.static-page .timeline-item h2{font-family:var(--font-display);font-size:22px;margin:0 0 6px;color:var(--paper)}
 body.static-page .timeline-item p,
 body.static-page .side-project p{color:var(--paper-2);font-size:14px;line-height:1.55;margin:0}
 body.static-page .side-project{margin-top:18px}
@@ -935,6 +935,79 @@ body.release-page .release-neighbor span,body.release-page .release-catalog-link
 body.release-page .release-neighbor strong{font-family:var(--font-display);font-size:clamp(18px,2vw,26px);line-height:1.05;overflow-wrap:anywhere}
 body.release-page .release-catalog-link{display:inline-flex;align-items:center;justify-content:center;padding:0 18px;color:var(--release-cyan);text-decoration:none;white-space:nowrap}
 body.release-page .release-catalog-link:hover{color:var(--paper)}
+/* Keep recurring labels and reading text consistent on every generated page. */
+body.static-page .catalog-section-head span,
+body.static-page .gigs-booking-panel span,
+body.static-page .pill,
+body.static-page .mixcloud-chart-label,
+body.static-page .legal-section-kicker,
+body.static-page .legal-panel span,
+body.static-page .legal-list a,
+body.static-page .timeline-item b,
+body.static-page .side-project span,
+body.static-page .contact-line span:first-child,
+body.release-page .release-poster-number,
+body.release-page .release-poster-eyebrow,
+body.release-page .release-poster-date,
+body.release-page .release-poster-primary span,
+body.release-page .release-poster-services a,
+body.release-page .release-editorial-kicker,
+body.release-page .release-editorial-meta,
+body.release-page .release-neighbor span,
+body.release-page .release-catalog-link{
+  line-height:1.45;
+  letter-spacing:.14em;
+}
+body.static-page .catalog-section-head span,
+body.static-page .gigs-booking-panel span,
+body.static-page .pill,
+body.static-page .mixcloud-chart-label,
+body.static-page .legal-section-kicker,
+body.static-page .legal-panel span,
+body.static-page .timeline-item b,
+body.static-page .side-project span,
+body.static-page .contact-line span:first-child,
+body.release-page .release-poster-eyebrow,
+body.release-page .release-poster-date,
+body.release-page .release-editorial-kicker,
+body.release-page .release-editorial-meta{
+  font-size:11px;
+}
+body.static-page .catalog-section-head h2,
+body.static-page .gigs-booking-panel h2,
+body.static-page .legal-section h2,
+body.static-page .timeline-item h2,
+body.release-page .release-editorial h2,
+body.release-page .release-neighbor strong{
+  text-wrap:balance;
+}
+body.static-page .catalog-section-head p,
+body.static-page .gigs-booking-panel p,
+body.static-page .detail-main p,
+body.static-page .legal-section p,
+body.static-page .legal-panel p,
+body.static-page .story-copy p,
+body.static-page .timeline-item p,
+body.static-page .side-project p,
+body.release-page .release-poster-lead,
+body.release-page .release-editorial-copy{
+  text-wrap:pretty;
+}
+body.static-page .catalog-section-head p,
+body.static-page .detail-main p,
+body.static-page .legal-section p,
+body.static-page .story-flow p,
+body.release-page .release-poster-lead,
+body.release-page .release-editorial-copy{
+  max-width:68ch;
+}
+body.static-page .catalog-section-head h2{line-height:1.04}
+body.static-page .legal-section h2{line-height:1.12}
+body.static-page .legal-section p{font-size:16px;line-height:1.75}
+body.static-page .timeline-item h2{line-height:1.18}
+body.release-page .release-poster-title{line-height:.9;letter-spacing:-.045em}
+body.release-page .release-poster-lead{line-height:1.7}
+body.release-page .release-editorial-copy{line-height:1.75}
 @media(max-width:980px){
   body.release-page .release-poster-grid{grid-template-columns:minmax(240px,.72fr) minmax(0,1.28fr);gap:42px}
   body.release-page .release-poster-title{font-size:clamp(48px,7vw,72px)}
@@ -2511,7 +2584,7 @@ function buildAboutPageDesign(lang = "en") {
     sideLink: "Explore the music",
     sideHref: "/music/"
   };
-  const timeline = bio.timeline.map(([year, place, note]) => `<article class="timeline-item"><b>${escapeHtml(year)}</b><div><h3>${escapeHtml(place)}</h3><p>${escapeHtml(note)}</p></div></article>`).join("\n");
+  const timeline = bio.timeline.map(([year, place, note]) => `<article class="timeline-item"><b>${escapeHtml(year)}</b><div><h2>${escapeHtml(place)}</h2><p>${escapeHtml(note)}</p></div></article>`).join("\n");
   const body = `<div class="story-layout">
   <div class="story-feature">
     <figure class="artist-photo-card">
