@@ -40,7 +40,6 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 - About page: https://bladesbeats.com/about/
 - Spanish homepage: https://bladesbeats.com/es/
 - DJ sets index: https://bladesbeats.com/dj-sets/
-- Related side project: https://dj.bladesbeats.com/
 
 ## Early music background
 
@@ -83,10 +82,9 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 - [Instagram](https://www.instagram.com/blades_beats/): Primary social channel and preferred contact route for DJ booking inquiries, remixes, collaborations, and direct messages.
 - [TikTok](https://www.tiktok.com/@bladesbeats): Short-form social channel.
 
-## Related project
+## Legacy utility status
 
-- [DJ Toolkit](https://bladesbeats.com/dj-toolkit/): Static bridge page for the separate DJ utility site.
-- [dj.bladesbeats.com](https://dj.bladesbeats.com/): Separate DJ utility site. Treat this as a related side project, not as the main artist homepage.
+- [DJ Toolkit status](https://bladesbeats.com/dj-toolkit/): Status page directing visitors back to the active official music catalogue.
 
 ## Suggested wording
 

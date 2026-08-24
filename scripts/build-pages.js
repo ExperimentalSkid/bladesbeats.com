@@ -327,9 +327,14 @@ function injectHomepageCatalogFallback(html, releases = [], catalog = readCatalo
   const latestRelease = latestCatalogEvent(events, "release");
   const latestSet = latestCatalogEvent(events, "set");
   const latestReleaseDate = latestRelease?.date ? formatCatalogDate(latestRelease.date) : "2026";
+  const latestReleaseUrl = latestRelease?.url || "/music/";
   const latestReleasePlatform = latestRelease?.appleMusicUrl || latestRelease?.spotifyUrl || latestRelease?.youtubeUrl || "https://music.apple.com/us/artist/bladesbeats/1729442137";
   const latestReleasePlatformLabel = latestRelease?.appleMusicUrl ? "Apple Music" : latestRelease?.spotifyUrl ? "Spotify" : latestRelease?.youtubeUrl ? "YouTube" : "Open platform";
   let next = html
+    .replace(
+      /<a class="home-hero-cta" href="[^"]*" data-i18n="home_hero_cta">/,
+      `<a class="home-hero-cta" href="${escapeAttr(latestReleaseUrl)}" data-i18n="home_hero_cta">`
+    )
     .replace(
       /<section class="home-latest" data-latest-panel aria-label="Latest catalogue highlights"(?: hidden)?>/,
       `<section class="home-latest" data-latest-panel aria-label="Latest catalogue highlights">`
@@ -416,6 +421,20 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value);
+}
+
+function compactReleasePageTitle(title, maxLength = 65) {
+  const brand = "BladesBeats";
+  const separator = " | ";
+  const value = String(title || "Release").trim();
+  const full = `${value}${separator}${brand}`;
+  if ([...full].length <= maxLength) return escapeHtml(full);
+
+  const available = Math.max(12, maxLength - [...`${separator}${brand}`].length - 1);
+  let shortened = [...value].slice(0, available).join("").trimEnd();
+  const lastSpace = shortened.lastIndexOf(" ");
+  if (lastSpace >= Math.floor(available * 0.65)) shortened = shortened.slice(0, lastSpace);
+  return escapeHtml(`${shortened.trimEnd()}…${separator}${brand}`);
 }
 
 function socialImageDimensions(image, fallback = { width: 1200, height: 630 }) {
@@ -1649,7 +1668,7 @@ function buildReleasePage(release, lang = "en", releases = [release]) {
 </section>
 ${releaseNeighborNav(release, releases, lang)}`;
   return basePage({
-    title: isEs ? `${escapeHtml(title)} | Lanzamiento oficial de BladesBeats` : `${escapeHtml(title)} | Official BladesBeats Release`,
+    title: compactReleasePageTitle(title),
     description,
     canonical: detailUrl,
     label: isEs ? "Lanzamiento" : "Release",
@@ -1701,7 +1720,9 @@ function buildSetIndex(sets, generatedSetUrls, lang = "en") {
   }).join("\n");
   return basePage({
     title: isEs ? "Sesiones DJ | BladesBeats" : "DJ Sets | BladesBeats",
-    description: isEs ? "Sesiones DJ oficiales de BladesBeats en Mixcloud." : "Official BladesBeats DJ sets and Mixcloud sessions.",
+    description: isEs
+      ? "Sesiones DJ oficiales de BladesBeats en Mixcloud, con páginas individuales y enlaces verificados."
+      : "Official BladesBeats DJ sets on Mixcloud, with individual session pages and verified links.",
     canonical: isEs ? PAGE_ALTERNATES.sets.es : PAGE_ALTERNATES.sets.en,
     label: isEs ? "Sesiones" : "DJ Sets",
     h1: isEs ? "Sesiones DJ" : "DJ Sets",
@@ -2310,10 +2331,10 @@ function buildAboutPage(lang = "en") {
       <div class="timeline-item"><b>2025</b><div><h3>Impulsa</h3><p>${isEs ? "La formación DJ con Quini Rivera en Impulsa Music Center conectó la parte de producción y la parte DJ del perfil." : "DJ training with Quini Rivera at Impulsa Music Center connected the production and DJ sides of the profile."}</p></div></div>
     </div>
     <div class="side-project">
-      <span>${isEs ? "Proyecto aparte" : "Side project"}</span>
-      <strong>dj.bladesbeats.com</strong>
-      <p>${isEs ? "Sitio separado de herramientas DJ." : "Separate DJ utility site."}</p>
-      <a href="https://dj.bladesbeats.com/" target="_blank" rel="noopener noreferrer">${isEs ? "Abrir dj.bladesbeats.com" : "Open dj.bladesbeats.com"}</a>
+      <span>${isEs ? "Catálogo oficial" : "Official catalog"}</span>
+      <strong>${isEs ? "Música de BladesBeats" : "BladesBeats music"}</strong>
+      <p>${isEs ? "Lanzamientos, remixes y sesiones oficiales." : "Official releases, remixes, and DJ sets."}</p>
+      <a href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Explorar la música" : "Explore the music"}</a>
     </div>
   </aside>
 </div>`;
@@ -2360,9 +2381,11 @@ function buildAboutPageDesign(lang = "en") {
       ["2023", "Enfoque de producción", "El perfil artístico de BladesBeats se volvió más enfocado a través del trabajo de producción con Manuel Ávila / Baster Beats."],
       ["2025", "Impulsa", "La formación DJ con Quini Rivera en Impulsa Music Center conectó la parte de producción y la parte DJ del perfil."]
     ],
-    sideLabel: "Proyecto aparte",
-    sideCopy: "Sitio separado de herramientas DJ.",
-    sideLink: "Abrir dj.bladesbeats.com"
+    sideLabel: "Catálogo oficial",
+    sideTitle: "Música de BladesBeats",
+    sideCopy: "Lanzamientos, remixes y sesiones oficiales.",
+    sideLink: "Explorar la música",
+    sideHref: "/es/musica/"
   } : {
     label: "About",
     h1: "About BladesBeats",
@@ -2385,9 +2408,11 @@ function buildAboutPageDesign(lang = "en") {
       ["2023", "Production focus", "The BladesBeats artist profile became more focused through production work with Manuel Ávila / Baster Beats."],
       ["2025", "Impulsa", "DJ training with Quini Rivera at Impulsa Music Center connected the production and DJ sides of the profile."]
     ],
-    sideLabel: "Side project",
-    sideCopy: "Separate DJ utility site.",
-    sideLink: "Open dj.bladesbeats.com"
+    sideLabel: "Official catalog",
+    sideTitle: "BladesBeats music",
+    sideCopy: "Official releases, remixes, and DJ sets.",
+    sideLink: "Explore the music",
+    sideHref: "/music/"
   };
   const timeline = bio.timeline.map(([year, place, note]) => `<article class="timeline-item"><b>${escapeHtml(year)}</b><div><h3>${escapeHtml(place)}</h3><p>${escapeHtml(note)}</p></div></article>`).join("\n");
   const body = `<div class="story-layout">
@@ -2417,9 +2442,9 @@ function buildAboutPageDesign(lang = "en") {
     <div class="timeline">${timeline}</div>
     <div class="side-project">
       <span>${escapeHtml(bio.sideLabel)}</span>
-      <strong>dj.bladesbeats.com</strong>
+      <strong>${escapeHtml(bio.sideTitle)}</strong>
       <p>${escapeHtml(bio.sideCopy)}</p>
-      <a href="https://dj.bladesbeats.com/" target="_blank" rel="noopener noreferrer">${escapeHtml(bio.sideLink)}</a>
+      <a href="${escapeAttr(bio.sideHref)}">${escapeHtml(bio.sideLink)}</a>
     </div>
   </div>
 </div>`;
@@ -2672,12 +2697,12 @@ ${platformCatalog(releases, sets, "es")}`
 
 function buildDjToolkitPage() {
   const canonical = `${SITE}/dj-toolkit/`;
-  const description = "DJ Toolkit is a separate BladesBeats utility project for DJ tools and workflow helpers.";
+  const description = "Status information for the former BladesBeats DJ Toolkit, with links to the active official music catalogue.";
   const body = `<div class="detail-layout">
   <article class="detail-main">
     <h2>DJ Toolkit</h2>
-    <p>DJ Toolkit is a separate utility project connected to BladesBeats. It stays secondary to the official artist homepage.</p>
-    <div class="platform-actions"><a class="button primary" href="https://dj.bladesbeats.com/" target="_blank" rel="noopener noreferrer">Open dj.bladesbeats.com</a></div>
+    <p>The standalone DJ Toolkit is not currently available. The BladesBeats artist site, official releases, remixes, and DJ sets remain available here.</p>
+    <div class="platform-actions"><a class="button primary" href="/music/">Explore the music</a><a class="button" href="/dj-sets/">Browse DJ sets</a></div>
   </article>
   <aside class="detail-side">
     <img src="/og-card.png" alt="BladesBeats DJ and producer graphic" width="1200" height="630" loading="lazy" decoding="async">
@@ -2689,9 +2714,9 @@ function buildDjToolkitPage() {
     canonical,
     label: "Side project",
     h1: "DJ Toolkit",
-    intro: "Separate DJ utility project by BladesBeats.",
+    intro: "The standalone utility is offline; the official artist catalogue remains active.",
     activeNav: "",
-    jsonLd: { "@context": "https://schema.org", "@type": "WebApplication", "name": "DJ Toolkit", "url": "https://dj.bladesbeats.com/", "creator": { "@type": "Person", "@id": ARTIST_ID, "name": "BladesBeats" } },
+    jsonLd: { "@context": "https://schema.org", "@type": "WebPage", "name": "DJ Toolkit status", "url": canonical, "isPartOf": { "@type": "WebSite", "url": SITE, "name": "BladesBeats" } },
     body
   });
 }
@@ -2953,7 +2978,9 @@ function buildLegalCookiePage(lang = "en") {
   });
   return basePage({
     title: isEs ? "Política de cookies | BladesBeats" : "Cookie policy | BladesBeats",
-    description: isEs ? "Política de cookies de BladesBeats." : "Cookie policy for BladesBeats.",
+    description: isEs
+      ? "Cómo utiliza BladesBeats.com cookies, portadas externas y reproductores multimedia bajo demanda."
+      : "How BladesBeats.com uses cookies, external artwork, and privacy-gated media players.",
     canonical: isEs ? PAGE_ALTERNATES.cookies.es : PAGE_ALTERNATES.cookies.en,
     label: "Legal",
     h1: isEs ? "Política de cookies" : "Cookie policy",
@@ -2981,11 +3008,12 @@ function validatePageHtml(html, label) {
 
 function validateHomepage() {
   const html = readText("index.html");
+  const latestReleaseUrl = latestCatalogEvent(validCatalogEvents(), "release")?.url || "/music/";
   if (/data-i18n="cta_spotify"|Listen on Spotify|Escuchar en Spotify/.test(html)) {
     throw new Error("Homepage hero CTA still implies Spotify exclusivity.");
   }
-  if (!/href="\/music\/"[^>]+data-i18n="home_hero_cta"/.test(html)) {
-    throw new Error("Homepage hero CTA does not point to the music page.");
+  if (!html.includes(`href="${escapeAttr(latestReleaseUrl)}" data-i18n="home_hero_cta"`)) {
+    throw new Error(`Homepage hero CTA does not point to the latest release (${latestReleaseUrl}).`);
   }
   if (!/<a class="site-nav-lang" href="\/es\/" hreflang="es"/.test(html)) {
     throw new Error("Homepage language control does not link to the Spanish URL.");

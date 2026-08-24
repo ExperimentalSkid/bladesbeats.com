@@ -60,6 +60,10 @@ function sha12(relative) {
   return crypto.createHash("sha256").update(fs.readFileSync(path.join(ROOT, relative))).digest("hex").slice(0, 12);
 }
 
+function renderedTextLength(value) {
+  return [...String(value || "").replace(/&(?:#x[0-9a-f]+|#\d+|[a-z]+);/gi, "x")].length;
+}
+
 function validateVersionedAssets(html, label) {
   for (const match of html.matchAll(/(?:href|src)="(\/assets\/[^"?]+)\?v=([a-f0-9]{12})"/g)) {
     const relative = match[1].replace(/^\//, "");
@@ -221,6 +225,7 @@ for (const relative of htmlFiles) {
   if (!/<html lang="(?:en|es)">/.test(html)) fail(`${relative}: missing supported language declaration`);
   if (/(?:href|src)=""/.test(html)) fail(`${relative}: contains a blank href/src`);
   if (/\bundefined\b/.test(html)) fail(`${relative}: contains undefined output`);
+  if (/https:\/\/dj\.bladesbeats\.com\/?/i.test(html)) fail(`${relative}: contains the unavailable DJ subdomain`);
   validateVersionedAssets(html, relative);
   validateLocalTargets(html, relative);
   validateJsonLd(html, relative);
@@ -231,13 +236,14 @@ validateHomepageCoverWall("es/index.html");
 validateHomepageFeaturedRelease("index.html", "/music/");
 validateHomepageFeaturedRelease("es/index.html", "/es/musica/");
 
+const featuredRelease = expectedFeaturedRelease();
 for (const [relative, expectedCta, expectedLanguage] of [
-  ["index.html", "/music/", /<a class="site-nav-lang" href="\/es\/" hreflang="es"/],
-  ["es/index.html", "/es/musica/", /<a class="site-nav-lang" href="\/" hreflang="en"/]
+  ["index.html", featuredRelease ? `/music/${featuredRelease.slug}/` : "/music/", /<a class="site-nav-lang" href="\/es\/" hreflang="es"/],
+  ["es/index.html", featuredRelease ? `/es/musica/${featuredRelease.slug}/` : "/es/musica/", /<a class="site-nav-lang" href="\/" hreflang="en"/]
 ]) {
   const homepage = read(relative);
   if (!homepage.includes(`href="${expectedCta}" data-i18n="home_hero_cta"`)) {
-    fail(`${relative}: homepage CTA does not use the language-specific music URL`);
+    fail(`${relative}: homepage CTA does not use the latest language-specific release URL`);
   }
   if (!expectedLanguage.test(homepage)) fail(`${relative}: homepage language link uses the wrong URL`);
   if (/data-lang-switch|localStorage|const COPY =|data-page="(?:releases|appearances|story|booking)"/.test(homepage)) {
@@ -250,12 +256,15 @@ for (const [relative, expectedCta, expectedLanguage] of [
 
 for (const relative of htmlFiles.filter((file) => /^(?:music|es\/musica)\/[^/]+\/index\.html$/.test(file))) {
   const html = read(relative);
+  const pageTitle = (html.match(/<title>([^<]+)<\/title>/) || [])[1] || "";
   const h1Count = (html.match(/<h1\b/g) || []).length;
   if (!/<body class="static-page subpage release-page">/.test(html)) fail(`${relative}: release poster body class is missing`);
   if (!/<h1 class="release-poster-title">/.test(html)) fail(`${relative}: release poster title is missing`);
   if (h1Count !== 1) fail(`${relative}: release page has ${h1Count} h1 elements instead of 1`);
   if (!/<section class="release-editorial"/.test(html)) fail(`${relative}: release editorial section is missing`);
   if (!/<nav class="release-neighbors"/.test(html)) fail(`${relative}: adjacent-release navigation is missing`);
+  if (renderedTextLength(pageTitle) > 65) fail(`${relative}: release title exceeds 65 displayed characters`);
+  if (!/\| BladesBeats$/.test(pageTitle)) fail(`${relative}: release title is missing the concise BladesBeats suffix`);
 }
 
 for (const relative of ["assets/js/contact-form.js", "workers/contact-worker.js", "scripts/build-pages.js"]) {
@@ -268,6 +277,15 @@ for (const relative of ["assets/js/contact-form.js", "workers/contact-worker.js"
 const nginxConfig = read("deploy/nginx-bladesbeats.conf");
 if ((nginxConfig.match(/add_header Cache-Control "no-store" always;/g) || []).length < 3) {
   fail("deploy/nginx-bladesbeats.conf: blocked source locations must return Cache-Control: no-store");
+}
+if (!/location = \/404\.html \{[\s\S]*?Cache-Control "no-store, max-age=0" always;[\s\S]*?(?:CDN-Cache-Control|Cloudflare-CDN-Cache-Control) "no-store" always;[\s\S]*?\}/.test(nginxConfig)) {
+  fail("deploy/nginx-bladesbeats.conf: 404 responses must prevent browser and CDN caching");
+}
+
+for (const relative of ["llms.txt", "llms-full.txt"]) {
+  if (exists(relative) && /https:\/\/dj\.bladesbeats\.com\/?/i.test(read(relative))) {
+    fail(`${relative}: contains the unavailable DJ subdomain`);
+  }
 }
 
 const sitemapXml = exists("sitemap.xml") ? read("sitemap.xml") : "";

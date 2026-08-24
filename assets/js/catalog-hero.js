@@ -219,10 +219,9 @@
   }
 
   function eventY(event, index) {
-    const baseY = height * (width < 560 ? 0.54 : 0.56);
-    const kindOffset = { release: -7, set: -27, gig: 17 }[event.kind] || 0;
-    const laneOffset = ((index % 6) - 2.5) * (width < 560 ? 5 : 6);
-    return baseY - 38 + kindOffset + laneOffset;
+    const centerY = Math.max(78, Math.min(height - 58, height * 0.5));
+    const laneOffset = ((index % 6) - 2.5) * 24;
+    return centerY + laneOffset;
   }
 
   function updatePoints() {
@@ -408,7 +407,17 @@
     requestAnimationFrame(() => positionCard(index));
   }
 
-  function hideCard() {
+  let suppressMarkerActivation = false;
+  let dismissedMarkerIndex = -1;
+
+  function clearMarkerSuppression() {
+    suppressMarkerActivation = false;
+    dismissedMarkerIndex = -1;
+  }
+
+  function hideCard(options) {
+    suppressMarkerActivation = Boolean(options && options.suppressMarkerActivation);
+    dismissedMarkerIndex = suppressMarkerActivation ? activeIndex : -1;
     if (card) card.hidden = true;
     setActiveMarker(-1);
   }
@@ -431,17 +440,26 @@
     button.style.setProperty("--marker-color", kindColors[event.kind] || kindColors.release);
     button.style.setProperty("--marker-glow", kindGlow[event.kind] || kindGlow.release);
     button.setAttribute("aria-label", kindLabel(event.kind) + ": " + (event.title || "BladesBeats") + ", " + formatDate(event));
-    button.addEventListener("mouseenter", () => showCard(index));
-    button.addEventListener("focus", () => showCard(index));
+    button.addEventListener("pointerdown", () => {
+      clearMarkerSuppression();
+    });
+    button.addEventListener("focus", () => {
+      if (suppressMarkerActivation && index === dismissedMarkerIndex) return;
+      clearMarkerSuppression();
+      showCard(index);
+    });
     button.addEventListener("click", (eventObject) => {
       eventObject.preventDefault();
+      clearMarkerSuppression();
       showCard(index);
     });
     hitLayer.appendChild(button);
     return button;
   }) : [];
 
-  if (closeButton) closeButton.addEventListener("click", hideCard);
+  if (closeButton) {
+    closeButton.addEventListener("click", () => hideCard({ suppressMarkerActivation: true }));
+  }
 
   if (card) {
     card.addEventListener("click", (eventObject) => {

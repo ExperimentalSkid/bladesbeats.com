@@ -91,7 +91,16 @@ async function main() {
   ]) {
     try {
       const response = await request(`${ORIGIN}${privatePath}`);
-      if (response.status !== 404) fail(`${privatePath}: expected 404, received ${response.status}`);
+      if (response.status !== 404) {
+        fail(`${privatePath}: expected 404, received ${response.status}; purge this exact URL from the CDN cache`);
+        continue;
+      }
+      const uncachedResponse = await request(`${ORIGIN}${privatePath}?deployment-check=${Date.now()}`);
+      if (uncachedResponse.status !== 404) fail(`${privatePath}: cache-busted request expected 404, received ${uncachedResponse.status}`);
+      const cacheControl = uncachedResponse.headers.get("cache-control") || "";
+      const cdnCacheControl = uncachedResponse.headers.get("cdn-cache-control") || uncachedResponse.headers.get("cloudflare-cdn-cache-control") || "";
+      if (!/no-store/i.test(cacheControl)) fail(`${privatePath}: 404 response is missing Cache-Control: no-store`);
+      if (!/no-store/i.test(cdnCacheControl)) fail(`${privatePath}: 404 response is missing CDN no-store protection`);
     } catch (error) {
       fail(`${privatePath}: privacy check failed (${error.message})`);
     }
