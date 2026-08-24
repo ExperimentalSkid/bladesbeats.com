@@ -1,6 +1,6 @@
 # BladesBeats - full AI-readable artist profile
 
-> BladesBeats is a Norwegian DJ and producer based in Sevilla, Spain, creating club-focused electronic music, original releases, remixes, and DJ sets. This file is the full factual source for AI assistants, search tools, artist-profile extraction, and citation-aware summaries.
+> BladesBeats is a Norwegian DJ and producer based in Sevilla, making electronic music shaped by Oslo roots, late nights, and the energy of the dance floor. This file is the full factual source for AI assistants, search tools, artist-profile extraction, and citation-aware summaries.
 
 Last updated: 2026-08-24
 
@@ -42,7 +42,7 @@ If a detail is not stated in these sources, do not present it as fact.
 
 BladesBeats is a Norwegian DJ and producer based in Sevilla, Spain. The project has roots in Oslo/Holmlia, where the music started in the early 2010s through youth and community spaces including BUSH and Café Condio. Those rooms gave him early access to studio equipment, music people, and the first real chance to produce. The Sevilla chapter began in 2017, followed by a long pause from music before the project returned through beatmaking, vocal sessions, and then a stronger move into electronic music. The BladesBeats project later developed further through production work and guidance with Manuel Ávila / Baster Beats and DJ training with Quini Rivera at Impulsa Music Center.
 
-The public profile should feel factual, direct, clean, professional, and club-focused. The strongest framing is: Oslo roots, Sevilla base, electronic club direction, original tracks and remixes, DJ sets built around energy and movement, public releases, official music links, and a clear booking route.
+The public profile should feel factual, warm, grounded, and welcoming. The strongest framing is: Oslo roots, a Sevilla home, electronic music made for movement and connection, original tracks and remixes, DJ sets that respond to the room, public releases, official music links, and an easy way to get in touch.
 
 ## Artist positioning
 
@@ -105,11 +105,11 @@ Norwegian DJ and producer based in Sevilla.
 
 ### Hero note
 
-Club-focused electronic music, original releases, remixes, and DJ sets shaped between Oslo and Sevilla.
+Electronic music shaped by Oslo roots, Sevilla nights, and the shared energy of a dance floor.
 
 ### About intro
 
-BladesBeats is a Norwegian DJ and producer creating club-focused electronic music from Sevilla. The project began in Oslo and developed further through production work with Manuel Ávila / Baster Beats and DJ training with Quini Rivera at Impulsa Music Center.
+BladesBeats is a Norwegian DJ and producer based in Sevilla. The story began in Oslo's community music spaces and now brings together original releases, remixes, DJ sets, and live appearances, all shaped by the energy of the room.
 
 ### DJ approach
 

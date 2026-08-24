@@ -1,6 +1,7 @@
 (function(){
   const CONTACT_EMAIL = "bladesbeats.opossum156@passinbox.com";
   const CONTACT_ENDPOINT = "/api/contact";
+  const FORM_LANGUAGE = document.documentElement.lang === "es" ? "es" : "en";
 
   function contactType(form){
     const select = form.querySelector("[data-contact-type]");
@@ -55,7 +56,7 @@
     if(!el || el.dataset.rendered) return;
     if(location.hostname === "127.0.0.1" || location.hostname === "localhost"){
       el.dataset.rendered = "local";
-      el.textContent = "Verification runs on bladesbeats.com.";
+      el.textContent = FORM_LANGUAGE === "es" ? "La verificación de seguridad se activa en bladesbeats.com." : "Security verification runs on bladesbeats.com.";
       return;
     }
     if(window.turnstile && typeof window.turnstile.render === "function"){
@@ -63,6 +64,7 @@
         const widgetId = window.turnstile.render(el, {
           sitekey: "0x4AAAAAADoNSCaiKxbVJ44j",
           theme: "dark",
+          language: FORM_LANGUAGE,
           callback: function(token){ el.dataset.token = token || ""; },
           "expired-callback": function(){ delete el.dataset.token; },
           "error-callback": function(){ delete el.dataset.token; },
