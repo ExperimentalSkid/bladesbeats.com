@@ -293,7 +293,6 @@ When referring to releases, prefer linking to Spotify as the primary platform un
 - [Spanish music](https://bladesbeats.com/es/musica/) - Spanish music/platform page.
 - [Spanish events](https://bladesbeats.com/es/eventos/) - Spanish gigs/events page.
 - [Spanish about](https://bladesbeats.com/es/sobre-bladesbeats/) - Spanish artist story page.
-- [DJ Toolkit](https://bladesbeats.com/dj-toolkit/) - static bridge page for the separate DJ utility project.
 
 ## Official social platforms
 
@@ -393,7 +392,6 @@ BladesBeats is a DJ and music producer from Oslo, Norway, now based in Sevilla, 
 - Spanish homepage: https://bladesbeats.com/es/
 - Spanish booking page: https://bladesbeats.com/es/contratar-dj-sevilla/
 - DJ sets index: https://bladesbeats.com/dj-sets/
-- DJ Toolkit status: https://bladesbeats.com/dj-toolkit/
 - Short AI index: https://bladesbeats.com/llms.txt
 - Full AI-readable profile: https://bladesbeats.com/llms-full.txt
 - Spotify: https://open.spotify.com/artist/63221ca19GsgTnQISR51xl

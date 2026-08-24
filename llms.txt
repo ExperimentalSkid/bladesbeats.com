@@ -84,7 +84,6 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 
 ## Legacy utility status
 
-- [DJ Toolkit status](https://bladesbeats.com/dj-toolkit/): Status page directing visitors back to the active official music catalogue.
 
 ## Suggested wording
 

@@ -11,7 +11,6 @@ const PUBLIC_DIRS = [
   "booking",
   "cookie-policy",
   "dj-sets",
-  "dj-toolkit",
   "es",
   "gigs",
   "legal-notice",

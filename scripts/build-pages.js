@@ -601,7 +601,8 @@ function staticNav(lang, activeNav, alternates) {
   const urls = lang === "es"
     ? { music: "/es/musica/", sets: "/es/sesiones/", gigs: "/es/eventos/", about: "/es/sobre-bladesbeats/", booking: "/es/contratar-dj-sevilla/" }
     : { music: "/music/", sets: "/dj-sets/", gigs: "/gigs/", about: "/about/", booking: "/booking/" };
-  return `<nav class="site-nav-menu" aria-label="Primary">
+  return `<button class="site-nav-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">Menu</button>
+    <nav class="site-nav-menu" id="primary-navigation" aria-label="Primary">
       ${Object.keys(labels).map((key) => `<a${activeNav === key ? ` class="active" aria-current="page"` : ""} href="${urls[key]}">${labels[key]}</a>`).join("\n      ")}
       ${languageLink(lang, alternates)}
     </nav>`;
@@ -666,6 +667,39 @@ function extractHomepageCss() {
 function staticPageScript() {
   return `document.querySelectorAll('[data-current-year]').forEach(function(el){el.textContent = new Date().getFullYear();});
 (function(){
+  const nav = document.querySelector(".site-nav");
+  const toggle = nav && nav.querySelector(".site-nav-toggle");
+  const menu = nav && nav.querySelector(".site-nav-menu");
+  if(!nav || !toggle || !menu) return;
+  const mobile = window.matchMedia("(max-width: 720px)");
+  function closeMenu(restoreFocus){
+    menu.removeAttribute("data-open");
+    toggle.setAttribute("aria-expanded", "false");
+    if(restoreFocus) toggle.focus();
+  }
+  function syncNavigation(){
+    nav.toggleAttribute("data-mobile-nav-ready", mobile.matches);
+    if(!mobile.matches) closeMenu(false);
+  }
+  toggle.addEventListener("click", function(){
+    const open = !menu.hasAttribute("data-open");
+    menu.toggleAttribute("data-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+  menu.addEventListener("click", function(event){
+    const target = event.target instanceof Element ? event.target : false;
+    if(mobile.matches && target && target.closest("a")) closeMenu(false);
+  });
+  document.addEventListener("click", function(event){
+    if(mobile.matches && menu.hasAttribute("data-open") && !nav.contains(event.target)) closeMenu(false);
+  });
+  document.addEventListener("keydown", function(event){
+    if(event.key === "Escape" && menu.hasAttribute("data-open")) closeMenu(true);
+  });
+  if(typeof mobile.addEventListener === "function") mobile.addEventListener("change", syncNavigation);
+  syncNavigation();
+}());
+(function(){
   let lastPlatformFocus = false;
   function closePlatformModal(modal){
     if(!modal) return;
@@ -674,6 +708,7 @@ function staticPageScript() {
     } else {
       modal.removeAttribute("open");
     }
+    document.documentElement.classList.remove("modal-open");
   }
   document.addEventListener("click", function(event){
     const embedLoader = event.target.closest("[data-embed-load]");
@@ -703,6 +738,7 @@ function staticPageScript() {
       } else {
         modal.setAttribute("open", "");
       }
+      document.documentElement.classList.add("modal-open");
       const focusTarget = modal.querySelector("a,button");
       if(focusTarget) focusTarget.focus({ preventScroll: true });
       return;
@@ -712,6 +748,7 @@ function staticPageScript() {
   });
   document.querySelectorAll(".platform-modal").forEach(function(modal){
     modal.addEventListener("close", function(){
+      document.documentElement.classList.remove("modal-open");
       if(lastPlatformFocus && document.contains(lastPlatformFocus)) lastPlatformFocus.focus({ preventScroll: true });
       lastPlatformFocus = false;
     });
@@ -730,6 +767,7 @@ function basePage({ title, description, canonical, label, h1, intro, body, jsonL
   const hasContactForm = body.includes("data-contact-form");
   const imagePreconnect = externalImagePreconnect(socialImage);
   const extraCss = `
+html.modal-open{overflow:hidden}
 body.static-page{background:var(--night);color:var(--paper);font-family:var(--font-body)}
 body.static-page::before{display:none}
 body.static-page .site-shell{min-height:100vh;display:block;background:var(--night)}
@@ -742,7 +780,22 @@ body.static-page .button.primary{background:transparent;color:var(--paper);borde
 body.static-page .button.primary:hover{background:transparent;color:var(--accent-2);border-color:var(--accent-2)}
 body.static-page .platform-actions{display:flex;flex-wrap:wrap;gap:12px;margin:0 auto 34px;max-width:1400px;padding:0 var(--pad-page)}
 body.static-page .platform-catalog{margin-bottom:clamp(48px,8vw,96px)}
+body.static-page .catalog-section-head{max-width:1400px;margin:0 auto clamp(24px,4vw,38px);padding:0 var(--pad-page)}
+body.static-page .catalog-section-head span{display:block;margin-bottom:10px;color:var(--accent-2);font-family:var(--font-mono);font-size:10px;letter-spacing:.24em;text-transform:uppercase}
+body.static-page .catalog-section-head h2{max-width:760px;margin:0;color:var(--paper);font-family:var(--font-display);font-size:clamp(32px,4.4vw,58px);line-height:1}
+body.static-page .catalog-section-head p{max-width:62ch;margin:14px 0 0;color:var(--paper-2);font-size:16px;line-height:1.65}
+body.static-page .platform-catalog .catalog-section-head{padding:0}
+body.static-page .release-preview .release-grid{padding-bottom:clamp(48px,7vw,78px)}
+body.static-page .release-preview .release-card-body{min-height:154px;display:flex;flex-direction:column}
+body.static-page .release-preview .release-card-platforms{margin-top:auto;padding-top:12px}
 body.static-page .appearances-grid{max-width:1400px;margin:0 auto clamp(48px,8vw,96px);padding:0 var(--pad-page);display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,360px));justify-content:start;gap:16px}
+body.static-page .gigs-showcase{max-width:1400px;margin:0 auto clamp(48px,8vw,96px);padding:0 var(--pad-page);display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);gap:18px}
+body.static-page .gigs-showcase .appearance-card.featured{height:100%}
+body.static-page .gigs-booking-panel{display:grid;align-content:center;padding:clamp(28px,4vw,48px);border:1px solid rgba(61,123,255,.32);background:linear-gradient(145deg,rgba(61,123,255,.12),rgba(157,91,255,.06) 62%,rgba(7,7,9,.45))}
+body.static-page .gigs-booking-panel span{color:var(--accent-2);font-family:var(--font-mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase}
+body.static-page .gigs-booking-panel h2{margin:14px 0 0;color:var(--paper);font-family:var(--font-display);font-size:clamp(32px,4vw,54px);line-height:.98}
+body.static-page .gigs-booking-panel p{margin:18px 0 24px;color:var(--paper-2);font-size:16px;line-height:1.65}
+body.static-page .gigs-booking-panel .button{justify-self:start}
 body.static-page .meta-row{display:flex;flex-wrap:wrap;gap:8px}
 body.static-page .pill{display:inline-flex;min-height:24px;align-items:center;color:var(--paper-3);font-family:var(--font-mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase}
 body.static-page .pill:not(:last-child)::after{content:"·";margin-left:8px;color:var(--paper-4)}
@@ -898,6 +951,7 @@ body.release-page .release-catalog-link:hover{color:var(--paper)}
 @media(max-width:900px){
   body.static-page .booking-layout{grid-template-columns:1fr}
   body.static-page .booking-main{border-right:0;border-bottom:1px solid var(--night-line)}
+  body.static-page .gigs-showcase{grid-template-columns:1fr}
 }
 @media(max-width:720px){
   body.release-page .release-poster{min-height:0}
@@ -940,6 +994,11 @@ body.release-page .release-catalog-link:hover{color:var(--paper)}
   body.static-page .story-copy p,
   body.static-page .booking-main,
   body.static-page .booking-main p{max-width:100%;min-width:0;overflow-wrap:anywhere}
+  body.static-page .appearance-modal{padding:12px}
+  body.static-page .appearance-dialog{width:100%;max-height:calc(100dvh - 24px);padding:20px}
+  body.static-page .catalog-section-head h2{font-size:clamp(32px,10vw,46px)}
+  body.static-page .gigs-showcase .appearance-card.featured{grid-template-columns:1fr}
+  body.static-page .gigs-showcase .appearance-card.featured .appearance-mark{min-height:0;aspect-ratio:16/10;border-right:0;border-bottom:1px solid var(--line)}
 }`;
   const generatedStylesHref = writeGeneratedAsset("assets/css/generated-pages.css", `${css}\n${extraCss}`);
   const generatedScriptHref = writeGeneratedAsset("assets/js/generated-pages.js", staticPageScript());
@@ -1363,8 +1422,45 @@ function platformCatalog(releases, sets, lang = "en") {
 </dialog>`;
   }).join("\n");
   return `<section class="platform-catalog" aria-label="${isEs ? "Plataformas oficiales de BladesBeats" : "BladesBeats official platforms"}">
+  <div class="catalog-section-head">
+    <span>${isEs ? "Plataformas oficiales" : "Official platforms"}</span>
+    <h2>${isEs ? "Explora por plataforma." : "Browse by platform."}</h2>
+    <p>${isEs ? "Encuentra enlaces directos, búsquedas por título y los perfiles oficiales de BladesBeats." : "Find direct links, title searches, and the official BladesBeats profiles."}</p>
+  </div>
   <div class="platform-catalog-grid">${cards}</div>
   ${modals}
+</section>`;
+}
+
+function releasePreview(releases, lang = "en") {
+  const isEs = lang === "es";
+  const latest = [...releases]
+    .sort((a, b) => String(b.releaseDate || b.lastmod || "").localeCompare(String(a.releaseDate || a.lastmod || "")))
+    .slice(0, 8);
+  const cards = latest.map((release) => {
+    const href = releaseDetailPath(release.slug, lang);
+    const title = displayReleaseTitle(release);
+    const image = release.image || "/og-card.png";
+    const date = formatReleaseDate(release.releaseDate, lang) || itemYear(release);
+    const type = releaseTypeLabel(release.type, lang);
+    return `<article class="release-card">
+  <a class="release-card-cover" href="${escapeAttr(href)}">
+    <img src="${escapeAttr(image)}" alt="${escapeAttr(title)} cover artwork" loading="lazy" decoding="async" width="600" height="600">
+  </a>
+  <div class="release-card-body">
+    <p class="release-card-meta">${escapeHtml(date)}${type ? ` &middot; ${escapeHtml(type)}` : ""}</p>
+    <h2 class="release-card-title"><a href="${escapeAttr(href)}">${escapeHtml(title)}</a></h2>
+    ${platformList(releaseDirectLinks(release))}
+  </div>
+</article>`;
+  }).join("\n");
+  return `<section class="release-preview" aria-labelledby="latest-releases-title">
+  <div class="catalog-section-head">
+    <span>${isEs ? "Catálogo reciente" : "Recent catalog"}</span>
+    <h2 id="latest-releases-title">${isEs ? "Últimos lanzamientos." : "Latest releases."}</h2>
+    <p>${isEs ? "Portadas, fechas, páginas individuales y enlaces oficiales para los lanzamientos más recientes." : "Artwork, dates, individual release pages, and official links for the newest tracks."}</p>
+  </div>
+  <div class="release-grid">${cards}</div>
 </section>`;
 }
 
@@ -1545,6 +1641,7 @@ function buildMusicIndex(releases, generatedReleaseUrls, sets) {
   <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">Apple Music</a>
   <a class="button" href="/dj-sets/">DJ sets</a>
 </div>
+${releasePreview(releases, "en")}
 ${platformCatalog(releases, sets, "en")}`
   });
 }
@@ -2489,11 +2586,11 @@ function buildGigsIndexPage(gigs, lang = "en") {
   const description = isEs
     ? "Bolos y actuaciones anteriores de BladesBeats, DJ y productor basado en Sevilla."
     : "Past gigs and appearances for BladesBeats, DJ and producer based in Sevilla.";
-  const cards = gigs.map((gig) => {
+  const cards = gigs.map((gig, index) => {
     const href = gigDetailPath(gig.slug, lang);
-    return `<a class="appearance-card" href="${escapeAttr(href)}">
+    return `<a class="appearance-card${index === 0 ? " featured" : ""}" href="${escapeAttr(href)}">
     <div class="appearance-mark"><img class="appearance-logo" src="${escapeAttr(gig.logoImage || "/og-card.png")}" alt="${escapeAttr(gig.title)} logo" width="1427" height="975" loading="lazy" decoding="async"></div>
-    <div>
+    <div class="appearance-body">
       <span class="appearance-label">${isEs ? "Bolos" : "Gigs"}</span>
       <span class="appearance-title">${escapeHtml(gig.title)}</span>
       <p class="appearance-meta">${escapeHtml(String(gig.year || gig.startDate?.slice(0, 4) || ""))}${gig.city ? ` · ${escapeHtml(gig.city)}` : ""}</p>
@@ -2501,7 +2598,15 @@ function buildGigsIndexPage(gigs, lang = "en") {
       <span class="appearance-link">${isEs ? "Detalles" : "Details"}</span>
     </div>
   </a>`;
-  }).join("\n");
+  });
+  const featured = cards[0] || "";
+  const remaining = cards.slice(1).join("\n");
+  const bookingPanel = `<aside class="gigs-booking-panel">
+    <span>${isEs ? "Disponible para contratación" : "Available for bookings"}</span>
+    <h2>${isEs ? "Lleva BladesBeats a tu evento." : "Bring BladesBeats to your event."}</h2>
+    <p>${isEs ? "Consultas para clubes, eventos, colaboraciones y sesiones DJ en Sevilla y otros destinos." : "Club nights, events, collaborations, and DJ booking inquiries in Sevilla and beyond."}</p>
+    <a class="button primary" href="${isEs ? "/es/contratar-dj-sevilla/" : "/booking/"}">${isEs ? "Consultar disponibilidad" : "Check availability"}</a>
+  </aside>`;
   return basePage({
     title: isEs ? "Bolos y eventos | BladesBeats" : "Gigs | BladesBeats",
     description,
@@ -2522,7 +2627,8 @@ function buildGigsIndexPage(gigs, lang = "en") {
         "item": gigSchema(gig, gigDetailUrl(gig.slug, lang), lang)
       }))
     },
-    body: `<section class="appearances-grid">${cards}</section>`
+    body: `${featured ? `<section class="gigs-showcase">${featured}${bookingPanel}</section>` : bookingPanel}
+${remaining ? `<section class="appearances-grid">${remaining}</section>` : ""}`
   });
 }
 
@@ -2608,6 +2714,8 @@ const SPANISH_HOMEPAGE_COPY = {
   catalog_legend_releases: "Lanzamientos",
   catalog_legend_sets: "Sesiones",
   catalog_legend_gigs: "Bolos",
+  catalog_mobile_note: "Mostrando la actividad reciente en móvil.",
+  catalog_mobile_link: "Abrir el catálogo completo",
   footer_tagline: "DJ y productor basado en Sevilla, España. Originario de Oslo, Noruega.",
   footer_listen: "Escuchar",
   footer_connect: "Conectar",
@@ -2691,33 +2799,8 @@ function buildSpanishMusicPage(releases, generatedReleaseUrls, sets) {
   <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">Apple Music</a>
   <a class="button" href="/es/sesiones/">Sesiones DJ</a>
 </div>
+${releasePreview(releases, "es")}
 ${platformCatalog(releases, sets, "es")}`
-  });
-}
-
-function buildDjToolkitPage() {
-  const canonical = `${SITE}/dj-toolkit/`;
-  const description = "Status information for the former BladesBeats DJ Toolkit, with links to the active official music catalogue.";
-  const body = `<div class="detail-layout">
-  <article class="detail-main">
-    <h2>DJ Toolkit</h2>
-    <p>The standalone DJ Toolkit is not currently available. The BladesBeats artist site, official releases, remixes, and DJ sets remain available here.</p>
-    <div class="platform-actions"><a class="button primary" href="/music/">Explore the music</a><a class="button" href="/dj-sets/">Browse DJ sets</a></div>
-  </article>
-  <aside class="detail-side">
-    <img src="/og-card.png" alt="BladesBeats DJ and producer graphic" width="1200" height="630" loading="lazy" decoding="async">
-  </aside>
-</div>`;
-  return basePage({
-    title: "DJ Toolkit | BladesBeats",
-    description,
-    canonical,
-    label: "Side project",
-    h1: "DJ Toolkit",
-    intro: "The standalone utility is offline; the official artist catalogue remains active.",
-    activeNav: "",
-    jsonLd: { "@context": "https://schema.org", "@type": "WebPage", "name": "DJ Toolkit status", "url": canonical, "isPartOf": { "@type": "WebSite", "url": SITE, "name": "BladesBeats" } },
-    body
   });
 }
 
@@ -3156,7 +3239,6 @@ function main() {
     ["about/index.html", buildAboutPageDesign("en"), `${SITE}/about/`, SITE_TEMPLATE_LASTMOD],
     ["booking/index.html", buildBookingPage("en"), `${SITE}/booking/`, SITE_TEMPLATE_LASTMOD],
     ["gigs/index.html", buildGigsIndexPage(gigs, "en"), `${SITE}/gigs/`, gigsLastmod],
-    ["dj-toolkit/index.html", buildDjToolkitPage(), `${SITE}/dj-toolkit/`, SITE_TEMPLATE_LASTMOD],
     ["legal-notice/index.html", buildLegalNoticePage("en"), `${SITE}/legal-notice/`, SITE_TEMPLATE_LASTMOD],
     ["privacy-policy/index.html", buildLegalPrivacyPage("en"), `${SITE}/privacy-policy/`, SITE_TEMPLATE_LASTMOD],
     ["cookie-policy/index.html", buildLegalCookiePage("en"), `${SITE}/cookie-policy/`, SITE_TEMPLATE_LASTMOD],

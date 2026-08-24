@@ -243,11 +243,11 @@ button{font:inherit;color:inherit}
 .appearance-modal[open]{display:grid;place-items:center}
 .appearance-modal:not([open]){display:none!important}
 .appearance-modal::backdrop{background:rgba(0,0,0,.72);backdrop-filter:blur(10px)}
-.appearance-dialog{width:min(560px,100%);max-height:min(82vh,720px);overflow:auto;border:1px solid var(--line-strong);background:var(--ink-2);box-shadow:var(--shadow);padding:24px}
+.appearance-dialog{width:min(560px,100%);max-height:min(82vh,720px);overflow:auto;border:1px solid var(--line-strong);background:var(--ink-2);color:var(--paper);box-shadow:var(--shadow);padding:24px}
 .appearance-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
 .appearance-close{min-height:30px;padding:0 10px;border:1px solid var(--line);background:rgba(233,238,251,.045);color:var(--paper-2);font-family:"JetBrains Mono",monospace;font-size:10px;text-transform:uppercase;cursor:pointer}
 .appearance-close:hover{color:var(--paper);border-color:var(--line-strong)}
-.appearance-dialog h2{font-size:30px;line-height:1.08}
+.appearance-dialog h2{color:var(--paper);font-size:30px;line-height:1.08}
 .appearance-detail-list{display:grid;gap:8px;margin-top:16px}
 .appearance-detail-list div{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:9px 10px;border:1px solid var(--line);background:rgba(7,7,7,.38)}
 .appearance-detail-list dt{color:var(--muted);font-family:"JetBrains Mono",monospace;font-size:10px;text-transform:uppercase}
@@ -288,9 +288,10 @@ button{font:inherit;color:inherit}
 .contact-form{padding:clamp(28px,4vw,52px);display:grid;gap:16px;background:rgba(7,7,9,.3);border-left:1px solid var(--line)}
 .form-field{display:grid;gap:7px}
 .form-field span,.form-meta-label{display:block;color:var(--muted);font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase}
-.bb-input{width:100%;min-height:48px;display:block;background:rgba(8,8,11,.6);border:1px solid var(--line);border-radius:2px;color:var(--paper);padding:12px 14px;font-family:"JetBrains Mono",monospace;font-size:14px;line-height:1.35;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}
+.bb-input{width:100%;min-height:48px;display:block;background:rgba(8,8,11,.6);border:1px solid var(--line);border-radius:2px;color:var(--paper);color-scheme:dark;padding:12px 14px;font-family:"JetBrains Mono",monospace;font-size:14px;line-height:1.35;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}
 .bb-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 1px rgba(61,123,255,.38)}
-.bb-input::placeholder{color:rgba(201,192,174,.45)}
+.bb-input::placeholder{color:rgba(201,210,235,.64)}
+.bb-input::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.72}
 .bb-input option{background:#0F1322;color:var(--paper)}
 textarea.bb-input{min-height:124px;resize:vertical}
 .form-split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
@@ -464,6 +465,20 @@ body::before{
 .site-nav-rule{
   height:1px;
   background:var(--night-line);
+}
+.site-nav-toggle{
+  display:none;
+  min-height:38px;
+  align-items:center;
+  justify-content:center;
+  padding:0 13px;
+  border:1px solid var(--night-line-2);
+  background:rgba(233,238,251,.035);
+  color:var(--paper);
+  font:inherit;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  cursor:pointer;
 }
 .site-nav-menu{
   display:flex;
@@ -961,6 +976,17 @@ body::before{
   background:var(--legend-color);
   box-shadow:0 0 14px var(--legend-color);
 }
+.catalog-mobile-note{
+  display:none;
+  margin:14px 0 0;
+  color:var(--paper-3);
+  font-family:var(--font-mono);
+  font-size:9px;
+  letter-spacing:.12em;
+  line-height:1.55;
+  text-transform:uppercase;
+}
+.catalog-mobile-note a{color:var(--accent-2);text-decoration:none}
 .home-hero-foot{
   background:var(--night);
   color:var(--paper);
@@ -1030,24 +1056,37 @@ body::before{
 }
 @media(max-width:720px){
   .site-nav-inner{
-    grid-template-columns:1fr;
+    grid-template-columns:minmax(0,1fr) auto;
     gap:10px;
-    padding-top:14px;
-    padding-bottom:14px;
+    padding-top:11px;
+    padding-bottom:11px;
   }
   .site-nav-rule{
     display:none;
   }
+  .site-nav-toggle{
+    display:inline-flex;
+  }
   .site-nav-menu{
-    flex-wrap:wrap;
-    justify-content:flex-start;
-    gap:8px 10px;
-    font-size:11px;
+    grid-column:1/-1;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:1px;
+    padding-top:9px;
+    border-top:1px solid var(--night-line);
+    font-size:10px;
     letter-spacing:.14em;
+  }
+  .site-nav[data-mobile-nav-ready] .site-nav-menu:not([data-open]){
+    display:none;
   }
   .site-nav-menu a,
   .site-nav-lang{
-    min-height:36px;
+    min-height:44px;
+    justify-content:center;
+    padding:0 8px;
+    border:1px solid var(--night-line);
+    background:rgba(233,238,251,.025);
   }
   .home-hero{
     gap:24px;
@@ -1143,6 +1182,9 @@ body::before{
   .catalog-legend{
     gap:8px 14px;
     font-size:9px;
+  }
+  .catalog-mobile-note{
+    display:block;
   }
 }
 .page-head{
@@ -1680,7 +1722,8 @@ body::before{
   <div class="site-nav-inner">
     <a class="site-nav-mark" href="/" aria-label="BladesBeats home">BladesBeats</a>
     <span class="site-nav-rule" aria-hidden="true"></span>
-    <nav class="site-nav-menu" aria-label="Primary">
+    <button class="site-nav-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">Menu</button>
+    <nav class="site-nav-menu" id="primary-navigation" aria-label="Primary">
       <a href="/es/musica/" data-i18n="nav_releases">Música</a>
       <a href="/es/sesiones/" data-i18n="nav_sets">Sesiones</a>
       <a href="/es/eventos/" data-i18n="nav_appearances">Bolos</a>
@@ -1814,6 +1857,7 @@ body::before{
         <span style="--legend-color:#9D5BFF" data-i18n="catalog_legend_sets">Sesiones</span>
         <span style="--legend-color:#3D7BFF" data-i18n="catalog_legend_gigs">Bolos</span>
       </div>
+      <p class="catalog-mobile-note"><span data-i18n="catalog_mobile_note">Mostrando la actividad reciente en móvil.</span> <a href="/es/musica/" data-i18n="catalog_mobile_link">Abrir el catálogo completo</a></p>
       <figcaption id="catalog-fallback" class="sr-only" data-i18n="catalog_fallback">Una línea temporal interactiva de las entradas del catálogo de BladesBeats, con lanzamientos, sesiones DJ y bolos, además de un marcador en la fecha actual.</figcaption>
     </figure>
   </section>
@@ -2333,6 +2377,6 @@ body::before{
   ]
 }
 </script>
-<script defer src="/assets/js/catalog-hero.js?v=066706640edb"></script>
+<script defer src="/assets/js/catalog-hero.js?v=3980f5b15fa3"></script>
 </body>
 </html>

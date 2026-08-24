@@ -1,5 +1,38 @@
 document.querySelectorAll('[data-current-year]').forEach(function(el){el.textContent = new Date().getFullYear();});
 (function(){
+  const nav = document.querySelector(".site-nav");
+  const toggle = nav && nav.querySelector(".site-nav-toggle");
+  const menu = nav && nav.querySelector(".site-nav-menu");
+  if(!nav || !toggle || !menu) return;
+  const mobile = window.matchMedia("(max-width: 720px)");
+  function closeMenu(restoreFocus){
+    menu.removeAttribute("data-open");
+    toggle.setAttribute("aria-expanded", "false");
+    if(restoreFocus) toggle.focus();
+  }
+  function syncNavigation(){
+    nav.toggleAttribute("data-mobile-nav-ready", mobile.matches);
+    if(!mobile.matches) closeMenu(false);
+  }
+  toggle.addEventListener("click", function(){
+    const open = !menu.hasAttribute("data-open");
+    menu.toggleAttribute("data-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+  menu.addEventListener("click", function(event){
+    const target = event.target instanceof Element ? event.target : false;
+    if(mobile.matches && target && target.closest("a")) closeMenu(false);
+  });
+  document.addEventListener("click", function(event){
+    if(mobile.matches && menu.hasAttribute("data-open") && !nav.contains(event.target)) closeMenu(false);
+  });
+  document.addEventListener("keydown", function(event){
+    if(event.key === "Escape" && menu.hasAttribute("data-open")) closeMenu(true);
+  });
+  if(typeof mobile.addEventListener === "function") mobile.addEventListener("change", syncNavigation);
+  syncNavigation();
+}());
+(function(){
   let lastPlatformFocus = false;
   function closePlatformModal(modal){
     if(!modal) return;
@@ -8,6 +41,7 @@ document.querySelectorAll('[data-current-year]').forEach(function(el){el.textCon
     } else {
       modal.removeAttribute("open");
     }
+    document.documentElement.classList.remove("modal-open");
   }
   document.addEventListener("click", function(event){
     const embedLoader = event.target.closest("[data-embed-load]");
@@ -37,6 +71,7 @@ document.querySelectorAll('[data-current-year]').forEach(function(el){el.textCon
       } else {
         modal.setAttribute("open", "");
       }
+      document.documentElement.classList.add("modal-open");
       const focusTarget = modal.querySelector("a,button");
       if(focusTarget) focusTarget.focus({ preventScroll: true });
       return;
@@ -46,6 +81,7 @@ document.querySelectorAll('[data-current-year]').forEach(function(el){el.textCon
   });
   document.querySelectorAll(".platform-modal").forEach(function(modal){
     modal.addEventListener("close", function(){
+      document.documentElement.classList.remove("modal-open");
       if(lastPlatformFocus && document.contains(lastPlatformFocus)) lastPlatformFocus.focus({ preventScroll: true });
       lastPlatformFocus = false;
     });
