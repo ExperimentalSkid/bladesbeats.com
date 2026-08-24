@@ -94,6 +94,81 @@ function validateJsonLd(html, label) {
   }
 }
 
+function coverWallDate(item, kind) {
+  if (kind === "release") return item.releaseDate || item.lastmod || "0000-00-00";
+  return item.uploadDate || item.publishedDate || item.lastmod || "0000-00-00";
+}
+
+function coverWallImageUrl(image) {
+  return image.replace(/\/\d+x\d+bb\.(jpg|jpeg|png)$/i, "/600x600bb.$1");
+}
+
+function expectedCoverWallItems() {
+  const releases = JSON.parse(read("data/releases.json"));
+  const sets = JSON.parse(read("data/dj-sets.json"));
+  const releaseCovers = releases
+    .filter((release) => {
+      const links = release.links || {};
+      return release.status === "official"
+        && release.image
+        && (release.appleMusicUrl || links.appleMusic || release.spotifyUrl || links.spotify);
+    })
+    .map((release) => ({
+      id: `release:${release.slug}`,
+      title: release.title,
+      image: coverWallImageUrl(release.image),
+      date: coverWallDate(release, "release")
+    }));
+  const setCovers = sets
+    .filter((set) => {
+      const links = set.links || {};
+      return set.status === "official" && set.image && (set.mixcloudUrl || links.mixcloud);
+    })
+    .map((set) => ({
+      id: `set:${set.slug}`,
+      title: set.title,
+      image: coverWallImageUrl(set.image),
+      date: coverWallDate(set, "set")
+    }));
+  const seenImages = new Set();
+  return releaseCovers
+    .concat(setCovers)
+    .sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title))
+    .filter((item) => {
+      if (seenImages.has(item.image)) return false;
+      seenImages.add(item.image);
+      return true;
+    })
+    .slice(0, 24);
+}
+
+function validateHomepageCoverWall(relative) {
+  const homepage = read(relative);
+  const match = homepage.match(/<div class="home-cover-wall"[^>]*data-generated-cover-wall[^>]*data-cover-count="(\d+)"[^>]*>([\s\S]*?)<\/div>\s*<div class="home-cover-scrim"/);
+  if (!match) {
+    fail(`${relative}: missing generated homepage cover wall`);
+    return;
+  }
+  const expected = expectedCoverWallItems();
+  const ids = [...match[2].matchAll(/data-cover-id="([^"]+)"/g)].map((entry) => entry[1]);
+  const uniqueIds = [...new Set(ids)];
+  const declaredCount = Number(match[1]);
+  const columnCount = (match[2].match(/class="home-cover-column"/g) || []).length;
+  if (columnCount !== 3) fail(`${relative}: homepage cover wall has ${columnCount} columns instead of 3`);
+  if (declaredCount !== uniqueIds.length) fail(`${relative}: homepage cover count is stale (${declaredCount} declared, ${uniqueIds.length} found)`);
+  if (uniqueIds.length > 24) fail(`${relative}: homepage cover wall exceeds the 24-cover limit (${uniqueIds.length})`);
+  if (ids.length !== uniqueIds.length * 2) fail(`${relative}: homepage cover wall does not contain exactly two animation loops`);
+  for (const id of uniqueIds) {
+    if (ids.filter((value) => value === id).length !== 2) fail(`${relative}: homepage cover ${id} is not duplicated exactly once`);
+  }
+  const expectedColumns = Array.from({ length: 3 }, () => []);
+  expected.forEach((item, index) => expectedColumns[index % 3].push(item.id));
+  const expectedIds = expectedColumns.flat();
+  if (uniqueIds.join("|") !== expectedIds.join("|")) {
+    fail(`${relative}: homepage cover wall does not match the latest distributed releases and DJ sets`);
+  }
+}
+
 for (const required of [
   "index.html",
   "404.html",
@@ -119,6 +194,9 @@ for (const relative of htmlFiles) {
   validateLocalTargets(html, relative);
   validateJsonLd(html, relative);
 }
+
+validateHomepageCoverWall("index.html");
+validateHomepageCoverWall("es/index.html");
 
 const sitemapXml = exists("sitemap.xml") ? read("sitemap.xml") : "";
 const sitemapUrls = [...sitemapXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);

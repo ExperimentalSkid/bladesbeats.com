@@ -189,6 +189,85 @@ function renderLatestFallbackCard(kind, event) {
         </a>`;
 }
 
+const HOMEPAGE_COVER_LIMIT = 24;
+const HOMEPAGE_COVER_COLUMNS = 3;
+
+function homepageCoverDate(item, kind) {
+  if (kind === "release") return item.releaseDate || item.lastmod || "0000-00-00";
+  return item.uploadDate || item.publishedDate || item.lastmod || "0000-00-00";
+}
+
+function homepageCoverImageUrl(image) {
+  return image.replace(/\/\d+x\d+bb\.(jpg|jpeg|png)$/i, "/600x600bb.$1");
+}
+
+function homepageCoverItems(releases, sets) {
+  const distributedReleases = releases
+    .filter((release) => {
+      const links = release.links || {};
+      return release.status === "official"
+        && release.image
+        && (release.appleMusicUrl || links.appleMusic || release.spotifyUrl || links.spotify);
+    })
+    .map((release) => ({
+      id: `release:${release.slug}`,
+      kind: "release",
+      title: release.title,
+      image: homepageCoverImageUrl(release.image),
+      date: homepageCoverDate(release, "release")
+    }));
+  const officialSets = sets
+    .filter((set) => {
+      const links = set.links || {};
+      return set.status === "official" && set.image && (set.mixcloudUrl || links.mixcloud);
+    })
+    .map((set) => ({
+      id: `set:${set.slug}`,
+      kind: "set",
+      title: set.title,
+      image: homepageCoverImageUrl(set.image),
+      date: homepageCoverDate(set, "set")
+    }));
+  const seenImages = new Set();
+  return distributedReleases
+    .concat(officialSets)
+    .sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title))
+    .filter((item) => {
+      if (seenImages.has(item.image)) return false;
+      seenImages.add(item.image);
+      return true;
+    })
+    .slice(0, HOMEPAGE_COVER_LIMIT);
+}
+
+function renderHomepageCoverWall(releases, sets) {
+  const covers = homepageCoverItems(releases, sets);
+  if (covers.length < HOMEPAGE_COVER_COLUMNS) {
+    throw new Error(`Homepage cover wall needs at least ${HOMEPAGE_COVER_COLUMNS} catalogue images.`);
+  }
+  const columns = Array.from({ length: HOMEPAGE_COVER_COLUMNS }, () => []);
+  covers.forEach((cover, index) => columns[index % HOMEPAGE_COVER_COLUMNS].push(cover));
+  const renderImage = (cover) => `<img src="${escapeAttr(cover.image)}" alt="" width="600" height="600" loading="lazy" decoding="async" data-cover-id="${escapeAttr(cover.id)}">`;
+  const renderedColumns = columns.map((column) => {
+    const loop = column.concat(column).map(renderImage).join("\n          ");
+    return `      <div class="home-cover-column">
+        <div class="home-cover-track">
+          ${loop}
+        </div>
+      </div>`;
+  }).join("\n");
+  return `    <div class="home-cover-wall" aria-hidden="true" data-generated-cover-wall data-cover-count="${covers.length}">
+${renderedColumns}
+    </div>`;
+}
+
+function injectHomepageCoverWall(html, releases, sets) {
+  const wall = renderHomepageCoverWall(releases, sets);
+  const existing = /    <div class="home-cover-wall"[^>]*>[\s\S]*?<\/div>\n    <div class="home-cover-scrim"/;
+  if (!existing.test(html)) throw new Error("Could not find homepage cover wall.");
+  return html.replace(existing, `${wall}\n    <div class="home-cover-scrim"`);
+}
+
 function injectHomepageCatalogFallback(html, catalog = readCatalogData()) {
   const events = validCatalogEvents(catalog);
   const counts = events.reduce((all, event) => {
@@ -227,7 +306,7 @@ function injectHomepageCatalogFallback(html, catalog = readCatalogData()) {
   return next;
 }
 
-function injectCatalogDataIntoHomepage() {
+function injectCatalogDataIntoHomepage(releases, sets) {
   const current = readText("index.html");
   const catalog = readCatalogData();
   const block = renderCatalogDataScript();
@@ -242,6 +321,7 @@ function injectCatalogDataIntoHomepage() {
     throw new Error("Could not find homepage script insertion point for catalog data.");
   }
 
+  next = injectHomepageCoverWall(next, releases, sets);
   next = injectAssetVersions(injectHomepageCatalogFallback(next, catalog));
   if (next !== current) writeFileAtomic(path.join(ROOT, "index.html"), next);
 }
@@ -2842,7 +2922,7 @@ function main() {
   const setsLastmod = pageLastmod(sets.map((item) => item.lastmod || item.uploadDate || item.publishedDate));
   sitemap.splice(2, 0, { loc: `${SITE}/dj-sets/`, lastmod: setsLastmod });
 
-  injectCatalogDataIntoHomepage();
+  injectCatalogDataIntoHomepage(releases, sets);
   updateStandaloneAssetVersions();
   validateHomepage();
   const gigsLastmod = pageLastmod(gigs.map((item) => item.lastmod || item.startDate));
