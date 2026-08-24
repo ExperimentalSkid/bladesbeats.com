@@ -46,6 +46,24 @@ function readJson(file) {
   return JSON.parse(readText(file));
 }
 
+function cachedCatalogImage(item, kind) {
+  const source = String(item.image || "");
+  if (!/^https:\/\//i.test(source)) return item;
+  let provider = "remote";
+  let extension = ".jpg";
+  if (/mzstatic\.com/i.test(source)) provider = "apple";
+  if (/i\.ytimg\.com/i.test(source)) provider = "youtube";
+  if (/thumbnailer\.mixcloud\.com/i.test(source)) {
+    provider = "mixcloud";
+    extension = ".png";
+  }
+  const relative = `assets/media/catalog/${kind}/${item.slug}-${provider}${extension}`;
+  if (!fs.existsSync(path.join(ROOT, relative))) {
+    throw new Error(`Missing cached catalog artwork: ${relative}. Run npm run cache:assets.`);
+  }
+  return { ...item, sourceImage: source, image: `/${relative}` };
+}
+
 function normalizeTitle(value) {
   return String(value || "")
     .normalize("NFD")
@@ -102,6 +120,10 @@ function assetHref(file) {
 
 function injectAssetVersions(html) {
   return html
+    .replace(
+      /\/assets\/css\/fonts\.css(?:\?v=[a-f0-9]+)?/g,
+      assetHref("assets/css/fonts.css")
+    )
     .replace(
       /\/assets\/css\/tokens\.css(?:\?v=[a-f0-9]+)?/g,
       assetHref("assets/css/tokens.css")
@@ -458,6 +480,9 @@ function naturalList(items, lang = "en") {
 
 function socialImageDimensions(image, fallback = { width: 1200, height: 630 }) {
   const value = String(image || "");
+  if (/-apple\.jpg(?:\?.*)?$/i.test(value)) return { width: 1200, height: 1200 };
+  if (/-youtube\.jpg(?:\?.*)?$/i.test(value)) return { width: 480, height: 360 };
+  if (/-mixcloud\.png(?:\?.*)?$/i.test(value)) return { width: 600, height: 600 };
   const apple = value.match(/\/(\d+)x(\d+)bb\.(?:jpe?g|png)(?:\?.*)?$/i);
   if (apple) return { width: Number(apple[1]), height: Number(apple[2]) };
 
@@ -746,7 +771,7 @@ function staticPageScript() {
       iframe.loading = "lazy";
       iframe.title = embedLoader.getAttribute("data-title") || "External media player";
       iframe.allow = "autoplay; encrypted-media; picture-in-picture";
-      iframe.referrerPolicy = "strict-origin-when-cross-origin";
+      iframe.referrerPolicy = "no-referrer";
       iframe.allowFullscreen = true;
       shell.classList.remove("embed-consent");
       shell.textContent = "";
@@ -793,6 +818,7 @@ function basePage({ title, description, canonical, label, h1, intro, body, jsonL
   const localizedSocialImageAlt = lang === "es" && socialImageAlt === "BladesBeats official artist image"
     ? "Imagen oficial del artista BladesBeats"
     : socialImageAlt;
+  const absoluteSocialImage = absoluteSiteUrl(socialImage);
   const imagePreconnect = externalImagePreconnect(socialImage);
   const extraCss = `
 html.modal-open{overflow:hidden}
@@ -899,8 +925,14 @@ body.static-page .contact-line{display:grid;grid-template-columns:1fr;gap:7px;ba
 body.static-page .contact-line a:hover{color:var(--accent-2)}
 body.static-page .booking-side .button.primary{border-color:var(--paper);background:var(--paper);color:var(--night);box-shadow:0 18px 50px rgba(61,123,255,.16)}
 body.static-page .booking-side .button.primary:hover{border-color:var(--accent-2);background:var(--accent-2);color:var(--night)}
+body.static-page .form-privacy-notice{display:grid;gap:8px;padding:16px 18px;border:1px solid rgba(61,123,255,.28);background:rgba(61,123,255,.055)}
+body.static-page .form-privacy-notice strong{color:var(--accent-2);font-family:var(--font-mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+body.static-page .form-privacy-notice p{margin:0;color:var(--paper-2);font-size:12px;line-height:1.55}
+body.static-page .form-privacy-notice small{color:var(--paper-3);font-family:var(--font-mono);font-size:9px;line-height:1.5}
+body.static-page .form-privacy-notice a{color:var(--accent-2);font-weight:700;text-decoration:none}
+body.static-page .form-privacy-notice a:hover{text-decoration:underline}
 body.static-page .contact-form.is-handoff .form-field:not(.contact-type-field),
-body.static-page .contact-form.is-handoff .form-meta,
+body.static-page .contact-form.is-handoff .form-privacy-notice,
 body.static-page .contact-form.is-handoff .turnstile-slot,
 body.static-page .contact-form.is-handoff .contact-submit{opacity:.32;filter:saturate(.45);pointer-events:none}
 body.static-page .contact-form.is-handoff .form-field:not(.contact-type-field) .bb-input,
@@ -1127,7 +1159,7 @@ ${alternateTags}
 <meta property="og:title" content="${escapeAttr(title.replace(/&mdash;/g, "-"))}">
 <meta property="og:description" content="${escapeAttr(description)}">
 <meta property="og:url" content="${escapeAttr(canonical)}">
-<meta property="og:image" content="${escapeAttr(socialImage)}">
+<meta property="og:image" content="${escapeAttr(absoluteSocialImage)}">
 <meta property="og:image:width" content="${escapeAttr(socialImageWidth)}">
 <meta property="og:image:height" content="${escapeAttr(socialImageHeight)}">
 <meta property="og:image:alt" content="${escapeAttr(localizedSocialImageAlt)}">
@@ -1136,14 +1168,10 @@ ${alternateTags}
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${escapeAttr(title.replace(/&mdash;/g, "-"))}">
 <meta name="twitter:description" content="${escapeAttr(description)}">
-<meta name="twitter:image" content="${escapeAttr(socialImage)}">
+<meta name="twitter:image" content="${escapeAttr(absoluteSocialImage)}">
 <meta name="twitter:image:alt" content="${escapeAttr(localizedSocialImageAlt)}">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 ${imagePreconnect}
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"></noscript>
+<link rel="stylesheet" href="${assetHref("assets/css/fonts.css")}">
 <link rel="stylesheet" href="${assetHref("assets/css/tokens.css")}">
 ${hasContactForm ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>` : ""}
 ${jsonLd ? renderJsonLd(jsonLd) : ""}
@@ -1593,7 +1621,7 @@ function releaseSchema(release, detailUrl = "") {
     }
   };
   schema.url = detailUrl || `${SITE}/music/#${release.slug}`;
-  if (release.image) schema.image = release.image;
+  if (release.image) schema.image = absoluteSiteUrl(release.image);
   if (release.releaseDate) schema.datePublished = release.releaseDate;
   if (Array.isArray(release.genres) && release.genres.length) schema.genre = release.genres;
   if (links.length) schema.sameAs = links;
@@ -1625,7 +1653,7 @@ function releaseDetailSchema(release, detailUrl, description, lang = "en") {
     "breadcrumb": { "@id": `${detailUrl}#breadcrumb` },
     "mainEntity": { "@id": `${detailUrl}#recording` }
   };
-  if (release.image) webpage.primaryImageOfPage = release.image;
+  if (release.image) webpage.primaryImageOfPage = absoluteSiteUrl(release.image);
   const graph = [webpage, breadcrumb, recording];
   const embedUrl = youtubeEmbedUrl(release);
   if (embedUrl && release.image && release.releaseDate) {
@@ -1636,7 +1664,7 @@ function releaseDetailSchema(release, detailUrl, description, lang = "en") {
       "@id": videoId,
       "name": title,
       "description": release.longDescription || description,
-      "thumbnailUrl": [release.image],
+      "thumbnailUrl": [absoluteSiteUrl(release.image)],
       "uploadDate": `${release.releaseDate}T00:00:00Z`,
       "embedUrl": embedUrl,
       "url": detailUrl,
@@ -2357,8 +2385,12 @@ function contactBodyDesign(lang) {
     gdprDetails: "Detalles de tu solicitud",
     gdprDetailsPh: "Describe lo que solicitas",
     gdprConfirm: "Confirmo que la información anterior es exacta y se refiere a mí, o a alguien a quien estoy autorizado a representar.",
-    securityNote: "Protegido por Cloudflare Turnstile. BladesBeats no consulta ni muestra tu dirección IP mediante un servicio del navegador; Cloudflare puede tratar datos técnicos para la seguridad.",
-    privacyLink: "Política de privacidad"
+    privacyTitle: "Privacidad, en breve",
+    privacyPurpose: "Responsable: la persona física que utiliza el nombre artístico BladesBeats, con base en Sevilla. Los campos obligatorios se utilizan para responder a tu solicitud y, si procede, preparar una posible contratación.",
+    privacyBasis: "Base jurídica: tu solicitud, las medidas precontractuales que pidas y el interés legítimo en proteger el formulario. Hetzner, Cloudflare, Resend y el proveedor del buzón ayudan a alojar, proteger y entregar el mensaje; algunos tratamientos pueden realizarse fuera del EEE con garantías contractuales.",
+    privacyRights: "Puedes ejercer tus derechos de protección de datos a través del contacto de privacidad. No recibirás marketing por enviar este formulario.",
+    securityNote: "Cloudflare Turnstile verifica el envío y puede tratar datos técnicos de seguridad.",
+    privacyLink: "Información completa y contacto de privacidad"
   } : {
     title: "A few helpful details",
     detail: "For event inquiries, the date, city, venue, set length, and budget help me give you a useful answer. If some details are still taking shape, that’s completely fine.",
@@ -2446,8 +2478,12 @@ function contactBodyDesign(lang) {
     gdprDetails: "Details of your request",
     gdprDetailsPh: "Describe what you are requesting",
     gdprConfirm: "I confirm the information above is accurate and relates to me, or to someone I am authorized to represent.",
-    securityNote: "Protected by Cloudflare Turnstile. BladesBeats does not look up or display your IP address through a browser service; Cloudflare may process technical data for security.",
-    privacyLink: "Privacy policy"
+    privacyTitle: "Privacy at a glance",
+    privacyPurpose: "Controller: the individual artist using the BladesBeats artist name, based in Sevilla. Required fields are used to answer your request and, where relevant, prepare a possible booking.",
+    privacyBasis: "Legal basis: your request, requested pre-contractual steps, and the legitimate interest in protecting the form. Hetzner, Cloudflare, Resend, and the mailbox provider help host, secure, and deliver the message; some processing may take place outside the EEA with contractual safeguards.",
+    privacyRights: "You can exercise your data-protection rights through the privacy contact. Submitting this form will not add you to a marketing list.",
+    securityNote: "Cloudflare Turnstile verifies the submission and may process technical security data.",
+    privacyLink: "Full information and privacy contact"
   };
   const options = (items) => items.map((item) => `<option>${escapeHtml(item)}</option>`).join("");
   return `<div class="bb-contact-grid">
@@ -2479,7 +2515,13 @@ function contactBodyDesign(lang) {
     <div class="contact-form-group" data-contact-group="dmca" hidden><p class="form-alert">${escapeHtml(t.dmcaNote)}</p><label class="form-field"><span>${escapeHtml(t.legalName)}</span><input class="bb-input" name="legal_name" type="text" placeholder="${escapeAttr(t.legalNamePh)}"></label><label class="form-field"><span>${escapeHtml(t.rights)}</span><input class="bb-input" name="rights_holder" type="text" placeholder="${escapeAttr(t.rightsPh)}"></label><label class="form-field"><span>${escapeHtml(t.infringing)}</span><textarea class="bb-input" name="infringing_urls" rows="3" placeholder="${escapeAttr(t.infringingPh)}"></textarea></label><label class="form-field"><span>${escapeHtml(t.original)}</span><textarea class="bb-input" name="original_work" rows="2" placeholder="${escapeAttr(t.originalPh)}"></textarea></label><label class="form-check"><input type="checkbox" name="dmca_declaration" value="confirmed"><span>${escapeHtml(t.dmcaDecl)}</span></label></div>
     <div class="contact-form-group" data-contact-group="gdpr" hidden><p class="form-alert">${escapeHtml(t.gdprNote)}</p><label class="form-field"><span>${escapeHtml(t.legalName)}</span><input class="bb-input" name="legal_name" type="text" placeholder="${escapeAttr(t.legalNamePh)}"></label><label class="form-field"><span>${escapeHtml(t.gdprType)}</span><select class="bb-input" name="gdpr_request">${options(t.gdprTypes)}</select></label><label class="form-field"><span>${escapeHtml(t.country)}</span><input class="bb-input" name="country" type="text" placeholder="${escapeAttr(t.countryPh)}"></label><label class="form-check"><input type="checkbox" name="gdpr_identity" value="confirmed"><span>${escapeHtml(t.gdprConfirm)}</span></label></div>
     <label class="form-field"><span data-contact-message-label>${escapeHtml(t.message)}</span><textarea class="bb-input" name="message" rows="5" required placeholder="${escapeAttr(t.messagePh)}"></textarea></label>
-    <div class="form-meta"><small>${escapeHtml(t.securityNote)}</small><a href="${isEs ? "/politica-privacidad/" : "/privacy-policy/"}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.privacyLink)}</a></div>
+    <div class="form-privacy-notice" aria-label="${escapeAttr(t.privacyTitle)}">
+      <strong>${escapeHtml(t.privacyTitle)}</strong>
+      <p>${escapeHtml(t.privacyPurpose)}</p>
+      <p>${escapeHtml(t.privacyBasis)}</p>
+      <p>${escapeHtml(t.privacyRights)} <a href="${isEs ? "/politica-privacidad/" : "/privacy-policy/"}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.privacyLink)}</a>.</p>
+      <small>${escapeHtml(t.securityNote)}</small>
+    </div>
     <div id="bb-turnstile" class="turnstile-slot"></div>
     <button class="contact-submit" type="submit" data-contact-submit>${escapeHtml(t.send)}</button>
     <p class="form-status" data-contact-status aria-live="polite"></p>
@@ -2988,14 +3030,15 @@ function buildLegalNoticePage(lang = "en") {
         title: "Identificación",
         html: `<p><strong>Sitio:</strong> ${escapeHtml(legal.website)}</p>
     <p><strong>Nombre público:</strong> ${escapeHtml(legal.tradeName)}</p>
+    <p><strong>Operador:</strong> persona física que utiliza BladesBeats como nombre artístico.</p>
     <p><strong>Actividad:</strong> música, sesiones DJ, bolos y contacto para contratación o colaboraciones.</p>
     <p><strong>Base pública:</strong> ${escapeHtml(publicLocation)}</p>
     <p><strong>Contacto:</strong> ${mailtoLegalLink(legal)}</p>`
       },
       {
-        title: "Datos privados",
-        html: `<p>No se publican domicilio privado, identificadores fiscales privados ni datos registrales no verificados.</p>
-    <p>Si una contratación requiere datos legales o fiscales, se facilitan de forma privada a la parte contratante.</p>`
+        title: "Situación del operador",
+        html: `<p>BladesBeats no es una sociedad mercantil ni se presenta como tal. Por ello no existe un CIF ni una inscripción mercantil a nombre de BladesBeats.</p>
+    <p>Los datos civiles, fiscales o de domicilio que resulten aplicables a la persona física solo se incorporarán aquí una vez verificados. No se publican datos supuestos o incorrectos.</p>`
       },
       {
         title: "Qué hace este sitio",
@@ -3008,7 +3051,7 @@ function buildLegalNoticePage(lang = "en") {
       },
       {
         title: "Enlaces externos",
-        html: `<p>YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok y otros servicios enlazados aplican sus propias condiciones, disponibilidad y políticas.</p>`
+        html: `<p>YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok y otros servicios enlazados aplican sus propias condiciones, disponibilidad y políticas. Un enlace no implica control ni responsabilidad sobre el servicio externo.</p>`
       },
       {
         title: "Última actualización",
@@ -3019,14 +3062,15 @@ function buildLegalNoticePage(lang = "en") {
         title: "Identity",
         html: `<p><strong>Site:</strong> ${escapeHtml(legal.website)}</p>
     <p><strong>Public name:</strong> ${escapeHtml(legal.tradeName)}</p>
+    <p><strong>Operator:</strong> an individual using BladesBeats as an artist name.</p>
     <p><strong>Activity:</strong> music, DJ sets, gigs, and contact for bookings or collaborations.</p>
     <p><strong>Public base:</strong> ${escapeHtml(publicLocation)}</p>
     <p><strong>Contact:</strong> ${mailtoLegalLink(legal, "email BladesBeats")}</p>`
       },
       {
-        title: "Private details",
-        html: `<p>A private home address, private tax identifiers and unverified registry details are not published.</p>
-    <p>If a booking requires legal or tax details, they are provided privately to the contracting party.</p>`
+        title: "Operator status",
+        html: `<p>BladesBeats is not a registered company and is not presented as one. There is therefore no company CIF or commercial-register entry in the BladesBeats name.</p>
+    <p>Civil identity, tax, or address details applicable to the individual will only be added here after verification. Assumed or incorrect details are not published.</p>`
       },
       {
         title: "What this site does",
@@ -3039,7 +3083,7 @@ function buildLegalNoticePage(lang = "en") {
       },
       {
         title: "External links",
-        html: `<p>YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok and other linked services apply their own terms, availability and policies.</p>`
+        html: `<p>YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok and other linked services apply their own terms, availability and policies. A link does not imply control of or responsibility for the external service.</p>`
       },
       {
         title: "Last updated",
@@ -3070,65 +3114,87 @@ function buildLegalPrivacyPage(lang = "en") {
     sections: isEs ? [
       {
         title: "Responsable",
-        html: `<p><strong>Identidad pública:</strong> ${escapeHtml(legal.tradeName)}</p>
-    <p><strong>Contacto privacidad:</strong> ${mailtoLegalLink(legal)}</p>`
+        html: `<p><strong>Responsable:</strong> la persona física que utiliza ${escapeHtml(legal.tradeName)} como nombre artístico, con base en Sevilla, España.</p>
+    <p><strong>Contacto de privacidad:</strong> ${mailtoLegalLink(legal)}</p>
+    <p>BladesBeats no es una sociedad mercantil. La identificación pública disponible se recoge en el <a href="/aviso-legal/">aviso legal</a>.</p>`
       },
       {
         title: "Datos tratados",
-        html: `<p>El formulario de contacto trata los datos que decides enviar, como nombre, correo electrónico, tipo de solicitud, mensaje y los detalles de contratación, colaboración, derechos o privacidad que completes. También se tratan los datos que envías voluntariamente por correo, Instagram u otra plataforma enlazada.</p>
-    <p>El sitio no consulta ni muestra tu dirección IP mediante un servicio del navegador. El alojamiento y Cloudflare pueden tratar datos técnicos, como IP, fecha, navegador y página solicitada, para entregar y proteger el sitio, verificar Turnstile y prevenir abusos.</p>`
+        html: `<p>El formulario recoge nombre, correo electrónico, motivo de contacto y mensaje. Según la solicitud, también puedes facilitar fecha y lugar del evento, presupuesto, enlaces musicales, datos de colaboración o información necesaria para una solicitud de derechos o privacidad.</p>
+    <p>El alojamiento, Cloudflare y el formulario pueden tratar datos técnicos como dirección IP, fecha y hora, navegador, página solicitada, resultado de Turnstile y señales de seguridad. Si se detecta un patrón malicioso y está activa la lista de bloqueo, se conserva durante una hora una clave seudonimizada derivada de la IP.</p>
+    <p>También se tratan los datos que decidas enviar por correo, Instagram u otra plataforma externa.</p>`
       },
       {
-        title: "Para qué se utilizan",
-        html: `<p>Los datos se utilizan para responder mensajes, gestionar consultas de contratación o colaboración, proteger el sitio y conservar prueba de una comunicación cuando sea necesario.</p>`
+        title: "Finalidades y bases jurídicas",
+        html: `<p><strong>Consultas generales y colaboraciones:</strong> responder a tu solicitud. La base es la gestión de la petición que has iniciado.</p>
+    <p><strong>Contratación:</strong> valorar disponibilidad y preparar una posible contratación. La base son las medidas precontractuales solicitadas por ti.</p>
+    <p><strong>Solicitudes de derechos, privacidad o retirada:</strong> comprobar y gestionar la solicitud, cumplir obligaciones aplicables y conservar prueba cuando sea necesario.</p>
+    <p><strong>Seguridad:</strong> prevenir spam, fraude y abuso del formulario. La base es el interés legítimo en proteger el sitio y sus comunicaciones.</p>
+    <p>Enviar el formulario no te suscribe a marketing ni autoriza comunicaciones promocionales.</p>`
       },
       {
-        title: "Base jurídica",
-        html: `<p>El tratamiento se basa en la solicitud de la persona interesada y, si existe una consulta de contratación, en medidas precontractuales. También puede basarse en el interés legítimo para la seguridad y la prevención de abusos, o en el consentimiento cuando proceda.</p>`
-      },
-      {
-        title: "Destinatarios",
-        html: `<p>El sitio está alojado en ${escapeHtml(legal.hostingProvider)}. Cloudflare presta la verificación Turnstile y funciones de seguridad. Resend transmite los formularios al buzón de contacto; el sitio no mantiene una base de datos separada con los mensajes. El correo y las demás plataformas externas aplican sus propias políticas cuando se utilizan.</p>`
+        title: "Proveedores y transferencias",
+        html: `<p>${escapeHtml(legal.hostingProvider)} aloja el sitio. Cloudflare presta Turnstile y funciones de seguridad. Resend transmite el contenido del formulario al proveedor del buzón de contacto. Estos proveedores actúan como encargados o proveedores técnicos según el servicio.</p>
+    <p>Cloudflare y Resend pueden tratar datos fuera del Espacio Económico Europeo. Cuando corresponde, sus transferencias se apoyan en decisiones de adecuación, cláusulas contractuales tipo u otras garantías reconocidas por el RGPD. Puedes pedir información sobre estas garantías mediante el contacto de privacidad.</p>
+    <p>El sitio no mantiene una base de datos independiente con los mensajes del formulario. Si eliges Instagram, YouTube, Spotify, Apple Music, Mixcloud, TikTok u otra plataforma, esa plataforma tratará los datos conforme a su propia política.</p>`
       },
       {
         title: "Conservación",
-        html: `<p>Los mensajes se eliminan cuando la consulta queda cerrada, salvo que sea necesario conservarlos para seguimiento, prevención de fraude o abuso, defensa ante reclamaciones u obligación aplicable.</p>`
+        html: `<p>Las consultas ordinarias se revisan y eliminan como máximo dentro de los 12 meses posteriores a su cierre, salvo que solicites antes su supresión.</p>
+    <p>Los mensajes vinculados a una contratación, reclamación, solicitud de derechos o posible obligación legal se conservan solo durante el plazo necesario para gestionar el asunto y atender responsabilidades aplicables. Los registros técnicos siguen los plazos de seguridad del proveedor. La clave temporal de bloqueo, cuando se utiliza, caduca después de una hora.</p>`
       },
       {
         title: "Derechos",
-        html: `<p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación, portabilidad y retirada del consentimiento cuando proceda. También puedes reclamar ante la Agencia Española de Protección de Datos.</p>
+        html: `<p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación y portabilidad, así como retirar el consentimiento cuando sea la base aplicable. Envía la solicitud al contacto de privacidad e indica el derecho que deseas ejercer. Solo se pedirá información adicional cuando sea necesaria para verificar la identidad y evitar entregar datos a otra persona.</p>
+    <p>También puedes presentar una reclamación ante la <a href="https://www.aepd.es/" target="_blank" rel="noopener noreferrer">Agencia Española de Protección de Datos</a>.</p>`
+      },
+      {
+        title: "Campos obligatorios y decisiones automatizadas",
+        html: `<p>Nombre, correo electrónico, motivo de contacto y mensaje son necesarios para tramitar el formulario. Sin ellos no es posible responder. Los demás campos son opcionales salvo que el propio tipo de solicitud indique que son necesarios para verificarla.</p>
+    <p>No se realizan perfiles, decisiones automatizadas ni cesiones de datos para publicidad.</p>
     <p><small>Última actualización: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ] : [
       {
         title: "Controller",
-        html: `<p><strong>Public identity:</strong> ${escapeHtml(legal.tradeName)}</p>
-    <p><strong>Privacy contact:</strong> ${mailtoLegalLink(legal, "email BladesBeats")}</p>`
+        html: `<p><strong>Controller:</strong> the individual using ${escapeHtml(legal.tradeName)} as an artist name, based in Sevilla, Spain.</p>
+    <p><strong>Privacy contact:</strong> ${mailtoLegalLink(legal, "email BladesBeats")}</p>
+    <p>BladesBeats is not a registered company. The available public identification appears in the <a href="/legal-notice/">legal notice</a>.</p>`
       },
       {
         title: "Data we handle",
-        html: `<p>The contact form handles the information you choose to submit, such as your name, email address, inquiry type, message, and any booking, collaboration, rights, or privacy-request details you complete. Information you voluntarily send by email, Instagram, or another linked platform is also handled.</p>
-    <p>The site does not look up or display your IP address through a browser service. The host and Cloudflare may process technical data, such as IP address, date, browser, and requested page, to deliver and protect the site, verify Turnstile, and prevent abuse.</p>`
+        html: `<p>The form collects your name, email address, inquiry type, and message. Depending on the request, you may also provide an event date and location, budget, music links, collaboration details, or information needed for a rights or privacy request.</p>
+    <p>The host, Cloudflare, and the form service may process technical data such as IP address, date and time, browser, requested page, Turnstile result, and security signals. If a malicious pattern is detected and the blocklist is enabled, a pseudonymised key derived from the IP address is retained for one hour.</p>
+    <p>Information you choose to send by email, Instagram, or another external platform is also handled.</p>`
       },
       {
-        title: "Why we use it",
-        html: `<p>We use the data to reply to messages, handle booking or collaboration inquiries, protect the site, and keep proof of a communication when needed.</p>`
+        title: "Purposes and legal bases",
+        html: `<p><strong>General inquiries and collaborations:</strong> to answer the request you initiated.</p>
+    <p><strong>Bookings:</strong> to check availability and prepare a possible engagement. The basis is the pre-contractual steps you request.</p>
+    <p><strong>Rights, privacy, or takedown requests:</strong> to verify and handle the request, meet applicable duties, and retain evidence where necessary.</p>
+    <p><strong>Security:</strong> to prevent spam, fraud, and form abuse. The basis is the legitimate interest in protecting the website and its communications.</p>
+    <p>Submitting the form does not subscribe you to marketing or authorise promotional messages.</p>`
       },
       {
-        title: "Legal basis",
-        html: `<p>We process data to respond to the person's request and, for booking inquiries, to take pre-contractual steps. We may also rely on legitimate interests for security and abuse prevention, or on consent where applicable.</p>`
-      },
-      {
-        title: "Recipients",
-        html: `<p>The site is hosted by ${escapeHtml(legal.hostingProvider)}. Cloudflare provides Turnstile verification and security functions. Resend transmits form submissions to the contact mailbox; the site does not keep a separate message database. Email and other external platforms apply their own policies when used.</p>`
+        title: "Providers and transfers",
+        html: `<p>${escapeHtml(legal.hostingProvider)} hosts the website. Cloudflare provides Turnstile and security functions. Resend transmits the form content to the contact mailbox provider. These companies act as processors or technical providers according to the service involved.</p>
+    <p>Cloudflare and Resend may process data outside the European Economic Area. Where applicable, their transfers rely on adequacy decisions, Standard Contractual Clauses, or another safeguard recognised by the GDPR. You can request information about these safeguards through the privacy contact.</p>
+    <p>The website does not maintain a separate form-message database. If you choose Instagram, YouTube, Spotify, Apple Music, Mixcloud, TikTok, or another platform, that platform handles data under its own policy.</p>`
       },
       {
         title: "Retention",
-        html: `<p>Messages are deleted when the inquiry is closed, unless they need to be kept for follow-up, fraud or abuse prevention, defense against claims, or an applicable obligation.</p>`
+        html: `<p>Routine inquiries are reviewed and deleted no later than 12 months after they are closed, unless you request earlier deletion.</p>
+    <p>Messages connected with a booking, claim, rights request, or possible legal duty are kept only as long as necessary to handle the matter and meet applicable responsibilities. Technical logs follow the provider's security schedule. The temporary block key, when used, expires after one hour.</p>`
       },
       {
         title: "Rights",
-        html: `<p>You may request access, rectification, deletion, objection, restriction, portability and withdrawal of consent where applicable. You may also complain to the Spanish Data Protection Agency.</p>
+        html: `<p>You may request access, rectification, deletion, objection, restriction, and portability, and withdraw consent where consent is the applicable basis. Email the privacy contact and identify the right you want to exercise. Additional information will only be requested when needed to verify identity and avoid disclosing data to someone else.</p>
+    <p>You may also complain to the <a href="https://www.aepd.es/" target="_blank" rel="noopener noreferrer">Spanish Data Protection Agency</a>.</p>`
+      },
+      {
+        title: "Required fields and automated decisions",
+        html: `<p>Name, email address, inquiry type, and message are required to process the form. Without them, a reply is not possible. Other fields are optional unless the selected request explains that information is needed for verification.</p>
+    <p>There is no profiling, automated decision-making, or disclosure of form data for advertising.</p>
     <p><small>Last updated: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ]
@@ -3155,41 +3221,55 @@ function buildLegalCookiePage(lang = "en") {
     current: "cookies",
     sections: isEs ? [
       {
-        title: "Analítica y publicidad",
-        html: `<p>En la última actualización, bladesbeats.com no carga scripts de Google Analytics, Google Tag Manager, Meta Pixel o TikTok Pixel desde el HTML.</p>
-    <p>No hay tienda online ni se instalan deliberadamente cookies publicitarias o de analítica.</p>`
+        title: "Configuración por defecto",
+        html: `<p>bladesbeats.com no utiliza Google Analytics, Google Tag Manager, Meta Pixel, TikTok Pixel ni cookies de publicidad o analítica.</p>
+    <p>Las fuentes y portadas del catálogo se sirven desde bladesbeats.com. La navegación y el selector de idioma no guardan preferencias en cookies ni en almacenamiento local.</p>`
       },
       {
         title: "Contacto y seguridad",
-        html: `<p>Las páginas de contacto cargan Cloudflare Turnstile para comprobar que el envío es legítimo. Cloudflare puede tratar datos técnicos y usar almacenamiento estrictamente necesario para la seguridad. El sitio no consulta ni muestra tu dirección IP mediante un servicio del navegador.</p>`
+        html: `<p>Las páginas de contacto cargan Cloudflare Turnstile para comprobar que el envío es legítimo y proteger el formulario. Cloudflare puede tratar la dirección IP, características del navegador, señales de seguridad y usar almacenamiento estrictamente necesario para la verificación.</p>
+    <p>Turnstile se utiliza únicamente para seguridad, no para publicidad ni medición de audiencia. Por su carácter necesario para proteger el formulario, no se ofrece como una categoría opcional.</p>`
       },
       {
-        title: "Mixcloud",
-        html: `<p>Los reproductores de Mixcloud no se cargan automáticamente. Se abren solo cuando el visitante pulsa el botón del reproductor. Desde ese momento, Mixcloud aplica sus propias cookies y políticas.</p>`
+        title: "YouTube y Mixcloud",
+        html: `<p>Los reproductores de YouTube y Mixcloud permanecen desconectados hasta que pulsas el botón para cargarlos. YouTube utiliza el dominio de privacidad mejorada youtube-nocookie.com.</p>
+    <p>Al cargar un reproductor, el navegador conecta con el proveedor elegido. Desde ese momento el proveedor puede tratar datos técnicos y utilizar cookies o almacenamiento conforme a su propia política.</p>`
       },
       {
-        title: "Gestión",
-        html: `<p>El selector de idioma usa URLs separadas y no guarda una preferencia en el almacenamiento local. Si se añaden analítica, publicidad, píxeles o cookies no esenciales, se deberá actualizar esta política y la gestión de consentimiento antes de usarlos.</p>
+        title: "Enlaces externos",
+        html: `<p>Los enlaces a YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok y otros servicios no cargan sus reproductores o aplicaciones dentro del sitio. Al seguir el enlace abandonas bladesbeats.com y se aplica la política del servicio elegido.</p>`
+      },
+      {
+        title: "Control",
+        html: `<p>Puedes evitar cualquier conexión opcional sin cargar los reproductores. Si ya has cargado uno, puedes eliminar sus cookies o datos desde la configuración del navegador y volver a la página sin pulsar el botón.</p>
+    <p>Si en el futuro se añaden cookies no esenciales, analítica o publicidad, se mostrará una elección previa con opciones de aceptar, rechazar y configurar antes de activarlas.</p>
     <p>Para consultas sobre cookies o privacidad, utiliza este ${mailtoLegalLink(legal)}.</p>
     <p><small>Última actualización: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ] : [
       {
-        title: "Analytics and advertising",
-        html: `<p>As of the last update, bladesbeats.com does not load Google Analytics, Google Tag Manager, Meta Pixel or TikTok Pixel scripts from the HTML.</p>
-    <p>There is no online shop, and the site does not deliberately set advertising or analytics cookies.</p>`
+        title: "Default setup",
+        html: `<p>bladesbeats.com does not use Google Analytics, Google Tag Manager, Meta Pixel, TikTok Pixel, or advertising or analytics cookies.</p>
+    <p>Fonts and catalogue artwork are served by bladesbeats.com. Navigation and the language selector do not store preferences in cookies or local storage.</p>`
       },
       {
         title: "Contact and security",
-        html: `<p>Contact pages load Cloudflare Turnstile to verify that a submission is legitimate. Cloudflare may process technical data and use storage that is strictly necessary for security. The site does not look up or display your IP address through a browser service.</p>`
+        html: `<p>Contact pages load Cloudflare Turnstile to verify that a submission is legitimate and protect the form. Cloudflare may process the IP address, browser characteristics, security signals, and storage strictly necessary for verification.</p>
+    <p>Turnstile is used only for security, not advertising or audience measurement. Because it is necessary to protect the form, it is not presented as an optional category.</p>`
       },
       {
-        title: "Mixcloud",
-        html: `<p>Mixcloud players do not load automatically. They open only when the visitor presses the player button. From that point, Mixcloud applies its own cookies and policies.</p>`
+        title: "YouTube and Mixcloud",
+        html: `<p>YouTube and Mixcloud players stay disconnected until you press the button to load them. YouTube uses its privacy-enhanced youtube-nocookie.com domain.</p>
+    <p>Loading a player connects the browser to the chosen provider. From that point, the provider may handle technical data and use cookies or storage under its own policy.</p>`
+      },
+      {
+        title: "External links",
+        html: `<p>Links to YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok, and other services do not load their players or applications inside the website. Following a link leaves bladesbeats.com and the selected service's policy applies.</p>`
       },
       {
         title: "Control",
-        html: `<p>The language selector uses separate URLs and does not save a preference in local storage. If analytics, advertising, pixels or non-essential cookies are added, this policy and consent handling must be updated before they are used.</p>
+        html: `<p>You can avoid every optional connection by not loading the players. If you already loaded one, you can remove its cookies or data in your browser settings and return to the page without pressing the button.</p>
+    <p>If non-essential cookies, analytics, or advertising are added in the future, a prior choice with accept, reject, and settings options will be provided before they are activated.</p>
     <p>For cookie or privacy questions, ${mailtoLegalLink(legal, "email BladesBeats")}.</p>
     <p><small>Last updated: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
@@ -3198,8 +3278,8 @@ function buildLegalCookiePage(lang = "en") {
   return basePage({
     title: isEs ? "Política de cookies | BladesBeats" : "Cookie policy | BladesBeats",
     description: isEs
-      ? "Información sobre cuándo bladesbeats.com conecta con Cloudflare o Mixcloud y qué servicios de analítica, publicidad o almacenamiento local utiliza."
-      : "Information about when bladesbeats.com connects to Cloudflare or Mixcloud and which analytics, advertising, or local-storage services it uses.",
+      ? "Información sobre cuándo bladesbeats.com conecta con Cloudflare, YouTube o Mixcloud y qué almacenamiento puede utilizarse."
+      : "Information about when bladesbeats.com connects to Cloudflare, YouTube, or Mixcloud and which storage may be used.",
     canonical: isEs ? PAGE_ALTERNATES.cookies.es : PAGE_ALTERNATES.cookies.en,
     label: "Legal",
     h1: isEs ? "Política de cookies" : "Cookie policy",
@@ -3279,8 +3359,10 @@ function buildSitemap(entries) {
 }
 
 function main() {
-  const releases = readJson("data/releases.json").filter((release) => !isExcludedRelease(release));
-  const sets = readJson("data/dj-sets.json");
+  const releases = readJson("data/releases.json")
+    .filter((release) => !isExcludedRelease(release))
+    .map((release) => cachedCatalogImage(release, "releases"));
+  const sets = readJson("data/dj-sets.json").map((set) => cachedCatalogImage(set, "sets"));
   const gigs = readJson("data/gigs.json");
   validateUniqueSlugs(releases, "Release");
   validateUniqueSlugs(sets, "DJ set");

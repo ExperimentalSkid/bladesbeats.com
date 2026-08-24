@@ -54,7 +54,7 @@ document.querySelectorAll('[data-current-year]').forEach(function(el){el.textCon
       iframe.loading = "lazy";
       iframe.title = embedLoader.getAttribute("data-title") || "External media player";
       iframe.allow = "autoplay; encrypted-media; picture-in-picture";
-      iframe.referrerPolicy = "strict-origin-when-cross-origin";
+      iframe.referrerPolicy = "no-referrer";
       iframe.allowFullscreen = true;
       shell.classList.remove("embed-consent");
       shell.textContent = "";

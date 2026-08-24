@@ -10,12 +10,17 @@ function json(data, status = 200, corsHeaders = {}) {
   });
 }
 
-function corsHeaders(request, env) {
+function allowedOrigin(request, env) {
   const origin = request.headers.get("Origin") || "";
   const allowed = (env.ALLOWED_ORIGIN || "https://bladesbeats.com").split(",").map((item) => item.trim());
-  const allowOrigin = allowed.includes(origin) ? origin : allowed[0];
+  return allowed.includes(origin) ? origin : "";
+}
+
+function corsHeaders(request, env) {
+  const origin = allowedOrigin(request, env);
+  if (!origin) return null;
   return {
-    "access-control-allow-origin": allowOrigin,
+    "access-control-allow-origin": origin,
     "access-control-allow-methods": "POST, OPTIONS",
     "access-control-allow-headers": "content-type",
     "vary": "Origin"
@@ -52,18 +57,22 @@ function requestIp(request) {
   return request.headers.get("CF-Connecting-IP") || request.headers.get("x-forwarded-for") || "";
 }
 
-function blockKey(ip) {
-  return `blocked:${ip}`;
+async function blockKey(ip, env) {
+  const salt = env.BLOCKLIST_SALT || env.TURNSTILE_SECRET_KEY || "bladesbeats-contact-blocklist";
+  const bytes = new TextEncoder().encode(`${salt}:${ip}`);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `blocked:${hash}`;
 }
 
 async function isBlocked(ip, env) {
   if (!ip || !env.CONTACT_BLOCKLIST) return false;
-  return Boolean(await env.CONTACT_BLOCKLIST.get(blockKey(ip)));
+  return Boolean(await env.CONTACT_BLOCKLIST.get(await blockKey(ip, env)));
 }
 
 async function blockIp(ip, env, reason) {
   if (!ip || !env.CONTACT_BLOCKLIST) return;
-  await env.CONTACT_BLOCKLIST.put(blockKey(ip), reason || "blocked", { expirationTtl: 3600 });
+  await env.CONTACT_BLOCKLIST.put(await blockKey(ip, env), reason || "blocked", { expirationTtl: 3600 });
 }
 
 function looksLikeSqlInjection(payload) {
@@ -149,6 +158,9 @@ async function sendEmail(payload, env) {
 export default {
   async fetch(request, env) {
     const headers = corsHeaders(request, env);
+    if (!headers) {
+      return json({ ok: false, error: "origin_not_allowed" }, 403, { "vary": "Origin" });
+    }
     const ip = requestIp(request);
 
     if (request.method === "OPTIONS") {

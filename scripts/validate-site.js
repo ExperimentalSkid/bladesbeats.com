@@ -106,6 +106,20 @@ function coverWallImageUrl(image) {
   return image.replace(/\/\d+x\d+bb\.(jpg|jpeg|png)$/i, "/600x600bb.$1");
 }
 
+function cachedCatalogImage(item, kind) {
+  const source = String(item.image || "");
+  if (!/^https:\/\//i.test(source)) return source;
+  let provider = "remote";
+  let extension = ".jpg";
+  if (/mzstatic\.com/i.test(source)) provider = "apple";
+  if (/i\.ytimg\.com/i.test(source)) provider = "youtube";
+  if (/thumbnailer\.mixcloud\.com/i.test(source)) {
+    provider = "mixcloud";
+    extension = ".png";
+  }
+  return `/assets/media/catalog/${kind}/${item.slug}-${provider}${extension}`;
+}
+
 function expectedCoverWallItems() {
   const releases = JSON.parse(read("data/releases.json"));
   const sets = JSON.parse(read("data/dj-sets.json"));
@@ -119,7 +133,7 @@ function expectedCoverWallItems() {
     .map((release) => ({
       id: `release:${release.slug}`,
       title: release.title,
-      image: coverWallImageUrl(release.image),
+      image: coverWallImageUrl(cachedCatalogImage(release, "releases")),
       date: coverWallDate(release, "release")
     }));
   const setCovers = sets
@@ -130,7 +144,7 @@ function expectedCoverWallItems() {
     .map((set) => ({
       id: `set:${set.slug}`,
       title: set.title,
-      image: coverWallImageUrl(set.image),
+      image: coverWallImageUrl(cachedCatalogImage(set, "sets")),
       date: coverWallDate(set, "set")
     }));
   const seenImages = new Set();
@@ -173,7 +187,7 @@ function validateHomepageCoverWall(relative) {
 }
 
 function expectedFeaturedRelease() {
-  return JSON.parse(read("data/releases.json"))
+  const release = JSON.parse(read("data/releases.json"))
     .filter((release) => {
       const links = release.links || {};
       return release.status === "official"
@@ -181,6 +195,7 @@ function expectedFeaturedRelease() {
         && (release.appleMusicUrl || links.appleMusic || release.spotifyUrl || links.spotify);
     })
     .sort((a, b) => String(b.releaseDate || b.lastmod || "").localeCompare(String(a.releaseDate || a.lastmod || "")))[0] || null;
+  return release ? { ...release, image: cachedCatalogImage(release, "releases") } : null;
 }
 
 function validateHomepageFeaturedRelease(relative, languagePath) {
@@ -208,11 +223,15 @@ for (const required of [
   "404.html",
   "robots.txt",
   "sitemap.xml",
+  "assets/css/fonts.css",
   "assets/css/tokens.css",
   "assets/css/generated-pages.css",
   "assets/js/catalog-hero.js",
   "assets/js/generated-pages.js",
-  "assets/js/contact-form.js"
+  "assets/js/contact-form.js",
+  "assets/fonts/hanken-grotesk-latin.woff2",
+  "assets/fonts/jetbrains-mono-latin.woff2",
+  "assets/fonts/space-grotesk-latin.woff2"
 ]) {
   if (!exists(required)) fail(`Missing required public file: ${required}`);
 }
@@ -225,6 +244,9 @@ for (const relative of htmlFiles) {
   if (/(?:href|src)=""/.test(html)) fail(`${relative}: contains a blank href/src`);
   if (/\bundefined\b/.test(html)) fail(`${relative}: contains undefined output`);
   if (/https:\/\/dj\.bladesbeats\.com\/?/i.test(html)) fail(`${relative}: contains the unavailable DJ subdomain`);
+  if (/(?:href|src)="https:\/\/(?:fonts\.(?:googleapis|gstatic)\.com|i\.ytimg\.com|is1-ssl\.mzstatic\.com|thumbnailer\.mixcloud\.com)/i.test(html)) {
+    fail(`${relative}: automatically loads a remote font or catalogue image`);
+  }
   validateVersionedAssets(html, relative);
   validateLocalTargets(html, relative);
   validateJsonLd(html, relative);

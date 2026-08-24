@@ -44,6 +44,15 @@ function copy(relative, destination = relative) {
   fs.copyFileSync(path.join(ROOT, relative), target);
 }
 
+function copyTree(relative) {
+  const source = path.join(ROOT, relative);
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const child = path.join(relative, entry.name);
+    if (entry.isDirectory()) copyTree(child);
+    if (entry.isFile()) copy(child);
+  }
+}
+
 function releaseDate(item) {
   return item.releaseDate || item.publishedDate || item.uploadDate || `${item.year || ""}-01-01`;
 }
@@ -81,6 +90,22 @@ function imageUrl(url, size = 700) {
   const value = String(url || "/og-card.png");
   if (/mzstatic\.com/.test(value)) return value.replace(/\/\d+x\d+bb\.jpg(?:\?.*)?$/, `/${size}x${size}bb.webp`);
   return value;
+}
+
+function cachedCatalogItem(item, kind) {
+  const source = String(item.image || "");
+  if (!/^https:\/\//i.test(source)) return item;
+  let provider = "remote";
+  let extension = ".jpg";
+  if (/mzstatic\.com/i.test(source)) provider = "apple";
+  if (/i\.ytimg\.com/i.test(source)) provider = "youtube";
+  if (/thumbnailer\.mixcloud\.com/i.test(source)) {
+    provider = "mixcloud";
+    extension = ".png";
+  }
+  const relative = `assets/media/catalog/${kind}/${item.slug}-${provider}${extension}`;
+  if (!fs.existsSync(path.join(ROOT, relative))) throw new Error(`Missing cached catalogue image: ${relative}`);
+  return { ...item, image: `/${relative}` };
 }
 
 function directLinks(release) {
@@ -158,9 +183,7 @@ function htmlDocument({ lang, title, description, canonical, alternates, active,
   <meta property="og:url" content="${escapeAttr(canonical)}"><meta property="og:image" content="${image}">
   <meta property="og:locale" content="${es ? "es_ES" : "en_US"}"><meta property="og:locale:alternate" content="${es ? "en_US" : "es_ES"}">
   <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeAttr(title)}"><meta name="twitter:description" content="${escapeAttr(description)}"><meta name="twitter:image" content="${image}">
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=optional" media="print" data-font-styles>
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=optional"></noscript>
+  <link rel="stylesheet" href="/assets/css/fonts.css">
   <link rel="stylesheet" href="/assets/css/site.css">
   <script type="application/ld+json">${JSON.stringify(schema).replace(/</g, "\\u003c")}</script>
   <script defer src="/assets/js/site.js"></script>
@@ -545,8 +568,8 @@ function buildLlms(releases, sets, gigs, full = false) {
 }
 
 function build() {
-  const releases = sortNewest(readJson("data/releases.json").filter((item) => !isExcludedRelease(item) && ["official", "published"].includes(item.status || "official")));
-  const sets = sortNewest(readJson("data/dj-sets.json").filter((item) => ["official", "published"].includes(item.status || "official")));
+  const releases = sortNewest(readJson("data/releases.json").filter((item) => !isExcludedRelease(item) && ["official", "published"].includes(item.status || "official")).map((item) => cachedCatalogItem(item, "releases")));
+  const sets = sortNewest(readJson("data/dj-sets.json").filter((item) => ["official", "published"].includes(item.status || "official")).map((item) => cachedCatalogItem(item, "sets")));
   const gigs = [...readJson("data/gigs.json")].sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
   const legal = readJson("data/legal.json");
   if (!releases.length) throw new Error("No approved releases are available for the homepage.");
@@ -602,7 +625,10 @@ function build() {
   copy("src/site.css", "assets/css/site.css");
   copy("src/site.js", "assets/js/site.js");
   copy("assets/js/catalog-hero.js");
+  copy("assets/css/fonts.css");
   copy("assets/css/tokens.css");
+  copyTree("assets/fonts");
+  copyTree("assets/media");
   ["favicon.ico", "favicon-16.png", "favicon-32.png", "favicon-48.png", "apple-touch-icon.png", "og-card.png", "bladesbeats.webp"].forEach((file) => copy(file));
   copy("gigs/expoestepona/expotattoo-estepona-logo-wide.jpg");
   write("robots.txt", `User-agent: *\nAllow: /\nSitemap: ${SITE}/sitemap.xml\n`);

@@ -31,7 +31,7 @@ if (fs.existsSync(dist)) {
     const html = fs.readFileSync(file, "utf8");
     for (const match of html.matchAll(/href="(https:\/\/[^"#]+)"/g)) {
       const url = new URL(match[1].replace(/&amp;/g, "&"));
-      if (!new Set(["bladesbeats.com", "fonts.googleapis.com", "fonts.gstatic.com"]).has(url.hostname)) urls.add(url.toString());
+      if (url.hostname !== "bladesbeats.com") urls.add(url.toString());
     }
   }
 }
