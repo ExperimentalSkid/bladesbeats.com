@@ -198,6 +198,35 @@ for (const relative of htmlFiles) {
 validateHomepageCoverWall("index.html");
 validateHomepageCoverWall("es/index.html");
 
+for (const [relative, expectedCta, expectedLanguage] of [
+  ["index.html", "/music/", /<a class="site-nav-lang" href="\/es\/" hreflang="es"/],
+  ["es/index.html", "/es/musica/", /<a class="site-nav-lang" href="\/" hreflang="en"/]
+]) {
+  const homepage = read(relative);
+  if (!homepage.includes(`href="${expectedCta}" data-i18n="home_hero_cta"`)) {
+    fail(`${relative}: homepage CTA does not use the language-specific music URL`);
+  }
+  if (!expectedLanguage.test(homepage)) fail(`${relative}: homepage language link uses the wrong URL`);
+  if (/data-lang-switch|localStorage|const COPY =|data-page="(?:releases|appearances|story|booking)"/.test(homepage)) {
+    fail(`${relative}: legacy hidden-page or client-side language code remains`);
+  }
+  if (/data-contact-form|api\.ipify\.org|challenges\.cloudflare\.com\/turnstile/.test(homepage)) {
+    fail(`${relative}: hidden contact-form dependency remains`);
+  }
+}
+
+for (const relative of ["assets/js/contact-form.js", "workers/contact-worker.js", "scripts/build-pages.js"]) {
+  const source = read(relative);
+  if (/api\.ipify\.org|contactIpDetected|data-contact-ip|Detected IP/.test(source)) {
+    fail(`${relative}: client-side IP collection remains`);
+  }
+}
+
+const nginxConfig = read("deploy/nginx-bladesbeats.conf");
+if ((nginxConfig.match(/add_header Cache-Control "no-store" always;/g) || []).length < 3) {
+  fail("deploy/nginx-bladesbeats.conf: blocked source locations must return Cache-Control: no-store");
+}
+
 const sitemapXml = exists("sitemap.xml") ? read("sitemap.xml") : "";
 const sitemapUrls = [...sitemapXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
 const sitemapLastmods = [...sitemapXml.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((match) => match[1]);

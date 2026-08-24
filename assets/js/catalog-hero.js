@@ -1,6 +1,10 @@
 (function () {
   "use strict";
 
+  document.querySelectorAll("[data-current-year]").forEach(function (element) {
+    element.textContent = String(new Date().getFullYear());
+  });
+
   const canvas = document.getElementById("catalog-canvas");
   const dataEl = document.getElementById("catalog-data");
   if (!canvas || !dataEl) return;

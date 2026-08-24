@@ -1,8 +1,6 @@
 (function(){
   const CONTACT_EMAIL = "bladesbeats.opossum156@passinbox.com";
   const CONTACT_ENDPOINT = "/api/contact";
-  let contactIpDetected = "";
-  let contactIpRequested = false;
 
   function contactType(form){
     const select = form.querySelector("[data-contact-type]");
@@ -50,25 +48,6 @@
     status.textContent = message || "";
     status.classList.toggle("error", kind === "error");
     status.classList.toggle("success", kind === "success");
-  }
-
-  function detectContactIp(form){
-    const ipEl = form.querySelector("[data-contact-ip]");
-    if(contactIpDetected){
-      if(ipEl) ipEl.textContent = contactIpDetected;
-      return;
-    }
-    if(contactIpRequested) return;
-    contactIpRequested = true;
-    fetch("https://api.ipify.org?format=json")
-      .then(function(response){ return response.ok ? response.json() : false; })
-      .then(function(data){
-        if(data && data.ip){
-          contactIpDetected = data.ip;
-          if(ipEl) ipEl.textContent = contactIpDetected;
-        }
-      })
-      .catch(function(){ if(ipEl) ipEl.textContent = "not detected"; });
   }
 
   function renderTurnstile(tries){
@@ -178,7 +157,6 @@
       const field = form.elements[key];
       lines.push(fieldLabel(field) + ": " + value);
     });
-    if(contactIpDetected) lines.push((form.dataset.ipLabel || "IP") + ": " + contactIpDetected);
     const subject = "BladesBeats — " + typeLabel;
     const mail = "mailto:" + CONTACT_EMAIL + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(lines.join("\n"));
     const canSendDirect = needsCaptcha && CONTACT_ENDPOINT;
@@ -196,8 +174,7 @@
             subject,
             type: typeLabel,
             fields: lines,
-            page: location.href,
-            ip: contactIpDetected || ""
+            page: location.href
           })
         });
         const result = await response.json().catch(function(){ return {}; });
@@ -242,7 +219,6 @@
     });
     form.addEventListener("submit", submitContactForm);
     updateContactGroups(form);
-    detectContactIp(form);
     renderTurnstile();
   });
 }());

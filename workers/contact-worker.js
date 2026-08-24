@@ -33,7 +33,6 @@ function normalizePayload(body) {
     subject: cleanLine(body.subject, 160) || "BladesBeats contact",
     type: cleanLine(body.type, 120),
     page: cleanLine(body.page, 500),
-    ip: cleanLine(body.ip, 80),
     fields
   };
 }
@@ -72,7 +71,6 @@ function looksLikeSqlInjection(payload) {
     payload.subject,
     payload.type,
     payload.page,
-    payload.ip,
     ...payload.fields
   ].join("\n");
   return SQLI_HIGH_CONFIDENCE_PATTERNS.some((pattern) => pattern.test(haystack));
@@ -111,8 +109,7 @@ async function sendEmail(payload, env) {
   const text = [
     payload.fields.join("\n"),
     "",
-    payload.page ? `Page: ${payload.page}` : "",
-    payload.ip ? `Detected IP: ${payload.ip}` : ""
+    payload.page ? `Page: ${payload.page}` : ""
   ].filter(Boolean).join("\n");
 
   const replyToLine = payload.fields.find((line) => /^email:/i.test(line));

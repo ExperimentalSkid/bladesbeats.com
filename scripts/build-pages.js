@@ -1,6 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const vm = require("vm");
 const crypto = require("crypto");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -111,6 +110,26 @@ function injectAssetVersions(html) {
       /\/assets\/js\/catalog-hero\.js(?:\?v=[a-f0-9]+)?/g,
       assetHref("assets/js/catalog-hero.js")
     );
+}
+
+function simplifyHomepageShell(html) {
+  let next = html
+    .replace(/\s*<script src="https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js" async defer><\/script>/, "")
+    .replace(
+      '<button type="button" class="site-nav-lang" data-lang-switch>EN / ES</button>',
+      '<a class="site-nav-lang" href="/es/" hreflang="es" lang="es" aria-label="Ver sitio en español">EN / ES</a>'
+    )
+    .replace('href="#listen" data-i18n="home_hero_cta"', 'href="/music/" data-i18n="home_hero_cta"')
+    .replace(/<section class="page" id="releases"[\s\S]*?<\/main>\s*(?=<footer class="site-footer")/, "</main>\n\n")
+    .replace(/\n<script>\s*const COPY = \{[\s\S]*?<\/script>\s*(?=<script defer src="\/assets\/js\/catalog-hero\.js)/, "\n");
+
+  if (/data-page="(?:releases|appearances|story|booking)"/.test(next)) {
+    throw new Error("Homepage still contains a hidden duplicate page.");
+  }
+  if (/data-contact-form|api\.ipify\.org|challenges\.cloudflare\.com\/turnstile/.test(next)) {
+    throw new Error("Homepage still contains contact-form dependencies.");
+  }
+  return next;
 }
 
 function updateStandaloneAssetVersions() {
@@ -322,6 +341,7 @@ function injectCatalogDataIntoHomepage(releases, sets) {
   }
 
   next = injectHomepageCoverWall(next, releases, sets);
+  next = simplifyHomepageShell(next);
   next = injectAssetVersions(injectHomepageCatalogFallback(next, catalog));
   if (next !== current) writeFileAtomic(path.join(ROOT, "index.html"), next);
 }
@@ -1590,8 +1610,6 @@ function staticContactScript() {
 (function(){
   const CONTACT_EMAIL = "bladesbeats.opossum156@passinbox.com";
   const CONTACT_ENDPOINT = "/api/contact";
-  let contactIpDetected = "";
-  let contactIpRequested = false;
 
   function contactType(form){
     const select = form.querySelector("[data-contact-type]");
@@ -1639,25 +1657,6 @@ function staticContactScript() {
     status.textContent = message || "";
     status.classList.toggle("error", kind === "error");
     status.classList.toggle("success", kind === "success");
-  }
-
-  function detectContactIp(form){
-    const ipEl = form.querySelector("[data-contact-ip]");
-    if(contactIpDetected){
-      if(ipEl) ipEl.textContent = contactIpDetected;
-      return;
-    }
-    if(contactIpRequested) return;
-    contactIpRequested = true;
-    fetch("https://api.ipify.org?format=json")
-      .then(function(response){ return response.ok ? response.json() : false; })
-      .then(function(data){
-        if(data && data.ip){
-          contactIpDetected = data.ip;
-          if(ipEl) ipEl.textContent = contactIpDetected;
-        }
-      })
-      .catch(function(){ if(ipEl) ipEl.textContent = "not detected"; });
   }
 
   function renderTurnstile(tries){
@@ -1767,7 +1766,6 @@ function staticContactScript() {
       const field = form.elements[key];
       lines.push(fieldLabel(field) + ": " + value);
     });
-    if(contactIpDetected) lines.push((form.dataset.ipLabel || "IP") + ": " + contactIpDetected);
     const subject = "BladesBeats — " + typeLabel;
     const mail = "mailto:" + CONTACT_EMAIL + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(lines.join("\\n"));
     const canSendDirect = needsCaptcha && CONTACT_ENDPOINT;
@@ -1785,8 +1783,7 @@ function staticContactScript() {
             subject,
             type: typeLabel,
             fields: lines,
-            page: location.href,
-            ip: contactIpDetected || ""
+            page: location.href
           })
         });
         const result = await response.json().catch(function(){ return {}; });
@@ -1831,7 +1828,6 @@ function staticContactScript() {
     });
     form.addEventListener("submit", submitContactForm);
     updateContactGroups(form);
-    detectContactIp(form);
     renderTurnstile();
   });
 }());`;
@@ -1946,10 +1942,8 @@ function contactBodyDesign(lang) {
     gdprDetails: "Detalles de tu solicitud",
     gdprDetailsPh: "Describe lo que solicitas",
     gdprConfirm: "Confirmo que la información anterior es exacta y se refiere a mí, o a alguien a quien estoy autorizado a representar.",
-    ip: "Tu dirección IP",
-    ipLoading: "detectando...",
-    ipNote: "Se incluye únicamente en el correo que envías, como medida de seguridad para identificar al remitente — no se almacena en ningún otro lugar.",
-    ipPrivacy: "Leer la política de privacidad"
+    securityNote: "Protegido por Cloudflare Turnstile. BladesBeats no consulta ni muestra tu dirección IP mediante un servicio del navegador; Cloudflare puede tratar datos técnicos para la seguridad.",
+    privacyLink: "Leer la política de privacidad"
   } : {
     title: "Book BladesBeats.",
     detail: "BladesBeats is based in Sevilla and can respond to DJ booking inquiries, music collaborations, and direct artist contact in English or Spanish.",
@@ -2037,10 +2031,8 @@ function contactBodyDesign(lang) {
     gdprDetails: "Details of your request",
     gdprDetailsPh: "Describe what you are requesting",
     gdprConfirm: "I confirm the information above is accurate and relates to me, or to someone I am authorized to represent.",
-    ip: "Your IP address",
-    ipLoading: "detecting...",
-    ipNote: "Included only in the email you send, as a security measure to identify the sender — it is not stored anywhere else.",
-    ipPrivacy: "Read the privacy policy"
+    securityNote: "Protected by Cloudflare Turnstile. BladesBeats does not look up or display your IP address through a browser service; Cloudflare may process technical data for security.",
+    privacyLink: "Read the privacy policy"
   };
   const options = (items) => items.map((item) => `<option>${escapeHtml(item)}</option>`).join("");
   return `<div class="bb-contact-grid">
@@ -2055,7 +2047,7 @@ function contactBodyDesign(lang) {
       <div class="contact-line"><span>${escapeHtml(t.base)}</span><span class="contact-value">${escapeHtml(t.baseValue)}</span></div>
     </div>
   </aside>
-  <form class="contact-form" data-contact-form data-type-label="${escapeAttr(t.type)}" data-default-type="${escapeAttr(t.booking)}" data-form-send="${escapeAttr(t.send)}" data-form-sending="${escapeAttr(t.sending)}" data-form-success="${escapeAttr(t.success)}" data-form-mailto="${escapeAttr(t.mailto)}" data-form-error="${escapeAttr(t.error)}" data-captcha-required="${escapeAttr(t.captcha)}" data-ip-label="${escapeAttr(t.ip)}" data-label-default="${escapeAttr(t.message)}" data-message-default="${escapeAttr(t.messagePh)}" data-message-mixing="${escapeAttr(t.mmMessagePh)}" data-message-courses="${escapeAttr(t.dcMessagePh)}" data-message-collaboration="${escapeAttr(t.collabMessagePh)}" data-message-dmca="${escapeAttr(t.dmcaMsgPh)}" data-message-gdpr="${escapeAttr(t.gdprDetailsPh)}" data-label-dmca="${escapeAttr(t.dmcaMsg)}" data-label-gdpr="${escapeAttr(t.gdprDetails)}">
+  <form class="contact-form" data-contact-form data-type-label="${escapeAttr(t.type)}" data-default-type="${escapeAttr(t.booking)}" data-form-send="${escapeAttr(t.send)}" data-form-sending="${escapeAttr(t.sending)}" data-form-success="${escapeAttr(t.success)}" data-form-mailto="${escapeAttr(t.mailto)}" data-form-error="${escapeAttr(t.error)}" data-captcha-required="${escapeAttr(t.captcha)}" data-label-default="${escapeAttr(t.message)}" data-message-default="${escapeAttr(t.messagePh)}" data-message-mixing="${escapeAttr(t.mmMessagePh)}" data-message-courses="${escapeAttr(t.dcMessagePh)}" data-message-collaboration="${escapeAttr(t.collabMessagePh)}" data-message-dmca="${escapeAttr(t.dmcaMsgPh)}" data-message-gdpr="${escapeAttr(t.gdprDetailsPh)}" data-label-dmca="${escapeAttr(t.dmcaMsg)}" data-label-gdpr="${escapeAttr(t.gdprDetails)}">
     <label class="form-field"><span>${escapeHtml(t.name)}</span><input class="bb-input" name="name" type="text" required autocomplete="name" placeholder="${escapeAttr(t.namePh)}"></label>
     <label class="form-field"><span>${escapeHtml(t.email)}</span><input class="bb-input" name="email" type="email" required autocomplete="email" placeholder="you@email.com"></label>
     <label class="form-field contact-type-field"><span>${escapeHtml(t.type)}</span><select class="bb-input" name="request_type" data-contact-type><option value="booking">${escapeHtml(t.booking)}</option><option value="collaboration">${escapeHtml(t.collab)}</option><option value="mixing">${escapeHtml(t.mixing)}</option><option value="courses">${escapeHtml(t.courses)}</option><option value="dmca">${escapeHtml(t.dmca)}</option><option value="gdpr">${escapeHtml(t.gdpr)}</option><option value="other">${escapeHtml(t.other)}</option></select></label>
@@ -2072,7 +2064,7 @@ function contactBodyDesign(lang) {
     <div class="contact-form-group" data-contact-group="dmca" hidden><p class="form-alert">${escapeHtml(t.dmcaNote)}</p><label class="form-field"><span>${escapeHtml(t.legalName)}</span><input class="bb-input" name="legal_name" type="text" placeholder="${escapeAttr(t.legalNamePh)}"></label><label class="form-field"><span>${escapeHtml(t.rights)}</span><input class="bb-input" name="rights_holder" type="text" placeholder="${escapeAttr(t.rightsPh)}"></label><label class="form-field"><span>${escapeHtml(t.infringing)}</span><textarea class="bb-input" name="infringing_urls" rows="3" placeholder="${escapeAttr(t.infringingPh)}"></textarea></label><label class="form-field"><span>${escapeHtml(t.original)}</span><textarea class="bb-input" name="original_work" rows="2" placeholder="${escapeAttr(t.originalPh)}"></textarea></label><label class="form-check"><input type="checkbox" name="dmca_declaration" value="confirmed"><span>${escapeHtml(t.dmcaDecl)}</span></label></div>
     <div class="contact-form-group" data-contact-group="gdpr" hidden><p class="form-alert">${escapeHtml(t.gdprNote)}</p><label class="form-field"><span>${escapeHtml(t.legalName)}</span><input class="bb-input" name="legal_name" type="text" placeholder="${escapeAttr(t.legalNamePh)}"></label><label class="form-field"><span>${escapeHtml(t.gdprType)}</span><select class="bb-input" name="gdpr_request">${options(t.gdprTypes)}</select></label><label class="form-field"><span>${escapeHtml(t.country)}</span><input class="bb-input" name="country" type="text" placeholder="${escapeAttr(t.countryPh)}"></label><label class="form-check"><input type="checkbox" name="gdpr_identity" value="confirmed"><span>${escapeHtml(t.gdprConfirm)}</span></label></div>
     <label class="form-field"><span data-contact-message-label>${escapeHtml(t.message)}</span><textarea class="bb-input" name="message" rows="5" required placeholder="${escapeAttr(t.messagePh)}"></textarea></label>
-    <div class="form-meta"><div class="form-meta-row"><span class="form-meta-label">${escapeHtml(t.ip)}</span><strong data-contact-ip>${escapeHtml(t.ipLoading)}</strong></div><small>${escapeHtml(t.ipNote)}</small><a href="${isEs ? "/politica-privacidad/" : "/privacy-policy/"}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.ipPrivacy)}</a></div>
+    <div class="form-meta"><small>${escapeHtml(t.securityNote)}</small><a href="${isEs ? "/politica-privacidad/" : "/privacy-policy/"}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.privacyLink)}</a></div>
     <div id="bb-turnstile" class="turnstile-slot"></div>
     <button class="contact-submit" type="submit" data-contact-submit>${escapeHtml(t.send)}</button>
     <p class="form-status" data-contact-status aria-live="polite"></p>
@@ -2385,39 +2377,57 @@ function buildGigDetailPage(gig, lang = "en") {
   });
 }
 
-function extractHomepageCopy(html) {
-  const start = html.indexOf("const COPY = ");
-  const end = html.indexOf("\nconst HTML_I18N_KEYS", start);
-  if (start === -1 || end === -1) throw new Error("Could not extract homepage COPY object.");
-  return vm.runInNewContext(`${html.slice(start, end)}\nCOPY`, {});
-}
-
 function replaceDataI18nText(html, key, value) {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const elementPattern = new RegExp(`(<([a-z0-9-]+)(?=[^>]*\\sdata-i18n="${escapedKey}")[^>]*>)([\\s\\S]*?)(<\\/\\2>)`, "gi");
   return html.replace(elementPattern, (match, open, tag, oldValue, close) => `${open}${value}${close}`);
 }
 
-function replaceDataI18nPlaceholder(html, key, value) {
-  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const placeholderPattern = new RegExp(`(<[^>]*data-i18n-placeholder="${escapedKey}"[^>]*\\splaceholder=")([^"]*)(")`, "gi");
-  return html.replace(placeholderPattern, (match, open, oldValue, close) => `${open}${escapeAttr(value)}${close}`);
-}
-
-function applySpanishHomepageDefaults(html) {
-  const copy = extractHomepageCopy(html).es;
-  let next = html;
-  Object.entries(copy).forEach(([key, value]) => {
-    if (typeof value !== "string") return;
-    next = replaceDataI18nText(next, key, value);
-    next = replaceDataI18nPlaceholder(next, key, value);
-  });
-  return next;
-}
+const SPANISH_HOMEPAGE_COPY = {
+  skip_to_content: "Saltar al contenido",
+  nav_releases: "Música",
+  nav_sets: "Sesiones",
+  nav_appearances: "Bolos",
+  nav_story: "Sobre mí",
+  nav_booking: "Contacto",
+  home_hero_eyebrow: "Oslo &middot; Sevilla &middot; <b>2017-actualidad</b>",
+  home_hero_subtitle: "DJ y productor basado en Sevilla, con raíces en Oslo y un catálogo en crecimiento de lanzamientos, sesiones y bolos.",
+  home_hero_cta: "&rarr; Escucha en todas las plataformas",
+  home_latest_label: "Últimos del catálogo",
+  home_latest_release: "Último lanzamiento",
+  home_latest_set: "Última sesión",
+  catalog_count_release_one: "lanzamiento",
+  catalog_count_release_many: "lanzamientos",
+  catalog_count_set_one: "sesión",
+  catalog_count_set_many: "sesiones",
+  catalog_count_gig_one: "bolo",
+  catalog_count_gig_many: "bolos",
+  catalog_card_release_kind: "Lanzamiento",
+  catalog_card_release_page: "Página del lanzamiento",
+  catalog_fallback: "Una línea temporal interactiva de las entradas del catálogo de BladesBeats, con lanzamientos, sesiones DJ y bolos, además de un marcador en la fecha actual.",
+  catalog_legend_releases: "Lanzamientos",
+  catalog_legend_sets: "Sesiones",
+  catalog_legend_gigs: "Bolos",
+  footer_tagline: "DJ y productor basado en Sevilla, España. Originario de Oslo, Noruega.",
+  footer_listen: "Escuchar",
+  footer_connect: "Conectar",
+  footer_booking: "Contacto",
+  footer_site: "Sitio",
+  footer_music: "Música",
+  footer_sets: "Sesiones",
+  footer_gigs: "Bolos",
+  footer_about: "Sobre mí",
+  footer_legal: "Legal",
+  footer_legal_notice: "Aviso legal",
+  footer_privacy: "Política de privacidad",
+  footer_cookies: "Política de cookies"
+};
 
 function buildSpanishHomePage() {
   let html = readText("index.html");
-  html = applySpanishHomepageDefaults(html);
+  Object.entries(SPANISH_HOMEPAGE_COPY).forEach(([key, value]) => {
+    html = replaceDataI18nText(html, key, value);
+  });
   html = html
     .replace('<html lang="en">', '<html lang="es">')
     .replace("<title>BladesBeats | DJ &amp; Producer &middot; Sevilla</title>", "<title>BladesBeats | DJ y productor en Sevilla</title>")
@@ -2444,7 +2454,10 @@ function buildSpanishHomePage() {
     .replaceAll('href="/legal-notice/"', 'href="/aviso-legal/"')
     .replaceAll('href="/privacy-policy/"', 'href="/politica-privacidad/"')
     .replaceAll('href="/cookie-policy/"', 'href="/politica-cookies/"')
-    .replace(">EN / ES</button>", ">ES / EN</button>");
+    .replace(
+      '<a class="site-nav-lang" href="/es/" hreflang="es" lang="es" aria-label="Ver sitio en español">EN / ES</a>',
+      '<a class="site-nav-lang" href="/" hreflang="en" lang="en" aria-label="View site in English">ES / EN</a>'
+    );
   return html;
 }
 
@@ -2642,8 +2655,8 @@ function buildLegalPrivacyPage(lang = "en") {
       },
       {
         title: "Datos",
-        html: `<p>El sitio no tiene formulario. Se tratan los datos que envías voluntariamente por correo, Instagram u otra plataforma enlazada: nombre o usuario, datos de contacto, mensaje y contexto de la consulta.</p>
-    <p>El alojamiento puede generar registros técnicos básicos, como IP, fecha, navegador y página solicitada, para seguridad y funcionamiento.</p>`
+        html: `<p>El formulario de contacto trata los datos que decides enviar, como nombre, correo electrónico, tipo de solicitud, mensaje y los detalles de contratación, colaboración, derechos o privacidad que completes. También se tratan los datos que envías voluntariamente por correo, Instagram u otra plataforma enlazada.</p>
+    <p>El sitio no consulta ni muestra tu dirección IP mediante un servicio del navegador. El alojamiento y Cloudflare pueden tratar datos técnicos, como IP, fecha, navegador y página solicitada, para entregar y proteger el sitio, verificar Turnstile y prevenir abusos.</p>`
       },
       {
         title: "Finalidad",
@@ -2655,7 +2668,7 @@ function buildLegalPrivacyPage(lang = "en") {
       },
       {
         title: "Destinatarios",
-        html: `<p>El sitio está alojado en ${escapeHtml(legal.hostingProvider)}. El correo y las plataformas externas usadas para contactar o escuchar música aplican sus propias políticas cuando se utilizan.</p>`
+        html: `<p>El sitio está alojado en ${escapeHtml(legal.hostingProvider)}. Cloudflare presta la verificación Turnstile y funciones de seguridad. Resend transmite los formularios al buzón de contacto; el sitio no mantiene una base de datos separada con los mensajes. El correo y las demás plataformas externas aplican sus propias políticas cuando se utilizan.</p>`
       },
       {
         title: "Conservación",
@@ -2674,8 +2687,8 @@ function buildLegalPrivacyPage(lang = "en") {
       },
       {
         title: "Data",
-        html: `<p>The site has no contact form. Data handled is what you voluntarily send by email, Instagram or another linked platform: name or username, contact details, message and inquiry context.</p>
-    <p>The host may generate basic technical logs, such as IP address, date, browser and requested page, for security and operation.</p>`
+        html: `<p>The contact form handles the information you choose to submit, such as your name, email address, inquiry type, message, and any booking, collaboration, rights, or privacy-request details you complete. Information you voluntarily send by email, Instagram, or another linked platform is also handled.</p>
+    <p>The site does not look up or display your IP address through a browser service. The host and Cloudflare may process technical data, such as IP address, date, browser, and requested page, to deliver and protect the site, verify Turnstile, and prevent abuse.</p>`
       },
       {
         title: "Purpose",
@@ -2687,7 +2700,7 @@ function buildLegalPrivacyPage(lang = "en") {
       },
       {
         title: "Recipients",
-        html: `<p>The site is hosted by ${escapeHtml(legal.hostingProvider)}. Email and external platforms used for contact or music access apply their own policies when used.</p>`
+        html: `<p>The site is hosted by ${escapeHtml(legal.hostingProvider)}. Cloudflare provides Turnstile verification and security functions. Resend transmits form submissions to the contact mailbox; the site does not keep a separate message database. Email and other external platforms apply their own policies when used.</p>`
       },
       {
         title: "Retention",
@@ -2724,11 +2737,11 @@ function buildLegalCookiePage(lang = "en") {
       {
         title: "Uso actual",
         html: `<p>En la última actualización, bladesbeats.com no carga scripts de Google Analytics, Google Tag Manager, Meta Pixel o TikTok Pixel desde el HTML.</p>
-    <p>No hay tienda online ni formulario de contacto.</p>`
+    <p>No hay tienda online ni se instalan deliberadamente cookies publicitarias o de analítica.</p>`
       },
       {
-        title: "Almacenamiento local",
-        html: `<p><strong>bb_lang:</strong> guarda la preferencia EN/ES en el navegador. Sirve solo para recordar el idioma elegido. Permanece hasta que el visitante borre los datos del navegador.</p>`
+        title: "Contacto y seguridad",
+        html: `<p>Las páginas de contacto cargan Cloudflare Turnstile para comprobar que el envío es legítimo. Cloudflare puede tratar datos técnicos y usar almacenamiento estrictamente necesario para la seguridad. El sitio no consulta ni muestra tu dirección IP mediante un servicio del navegador.</p>`
       },
       {
         title: "Mixcloud",
@@ -2736,7 +2749,7 @@ function buildLegalCookiePage(lang = "en") {
       },
       {
         title: "Gestión",
-        html: `<p>Para borrar la preferencia de idioma, elimina los datos del sitio en el navegador. Si se añaden analítica, publicidad, píxeles o cookies no esenciales, se deberá actualizar esta política y la gestión de consentimiento antes de usarlos.</p>
+        html: `<p>El selector de idioma usa URLs separadas y no guarda una preferencia en el almacenamiento local. Si se añaden analítica, publicidad, píxeles o cookies no esenciales, se deberá actualizar esta política y la gestión de consentimiento antes de usarlos.</p>
     <p>Para consultas sobre cookies o privacidad, utiliza este ${mailtoLegalLink(legal)}.</p>
     <p><small>Última actualización: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
@@ -2744,11 +2757,11 @@ function buildLegalCookiePage(lang = "en") {
       {
         title: "Current use",
         html: `<p>As of the last update, bladesbeats.com does not load Google Analytics, Google Tag Manager, Meta Pixel or TikTok Pixel scripts from the HTML.</p>
-    <p>There is no online shop or contact form.</p>`
+    <p>There is no online shop, and the site does not deliberately set advertising or analytics cookies.</p>`
       },
       {
-        title: "Local storage",
-        html: `<p><strong>bb_lang:</strong> stores the EN/ES preference in the browser. It is only used to remember the selected language. It remains until the visitor clears browser site data.</p>`
+        title: "Contact and security",
+        html: `<p>Contact pages load Cloudflare Turnstile to verify that a submission is legitimate. Cloudflare may process technical data and use storage that is strictly necessary for security. The site does not look up or display your IP address through a browser service.</p>`
       },
       {
         title: "Mixcloud",
@@ -2756,7 +2769,7 @@ function buildLegalCookiePage(lang = "en") {
       },
       {
         title: "Control",
-        html: `<p>To clear the language preference, delete site data in the browser. If analytics, advertising, pixels or non-essential cookies are added, this policy and consent handling must be updated before they are used.</p>
+        html: `<p>The language selector uses separate URLs and does not save a preference in local storage. If analytics, advertising, pixels or non-essential cookies are added, this policy and consent handling must be updated before they are used.</p>
     <p>For cookie or privacy questions, use this ${mailtoLegalLink(legal, "email contact")}.</p>
     <p><small>Last updated: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
@@ -2795,8 +2808,17 @@ function validateHomepage() {
   if (/data-i18n="cta_spotify"|Listen on Spotify|Escuchar en Spotify/.test(html)) {
     throw new Error("Homepage hero CTA still implies Spotify exclusivity.");
   }
-  if (!/href="#listen"[^>]+data-i18n="home_hero_cta"/.test(html)) {
-    throw new Error("Homepage hero CTA does not point to the listen anchor.");
+  if (!/href="\/music\/"[^>]+data-i18n="home_hero_cta"/.test(html)) {
+    throw new Error("Homepage hero CTA does not point to the music page.");
+  }
+  if (!/<a class="site-nav-lang" href="\/es\/" hreflang="es"/.test(html)) {
+    throw new Error("Homepage language control does not link to the Spanish URL.");
+  }
+  if (/data-lang-switch|localStorage|const COPY =|data-page="(?:releases|appearances|story|booking)"/.test(html)) {
+    throw new Error("Homepage still contains legacy client-side routing or language code.");
+  }
+  if (/data-contact-form|api\.ipify\.org|challenges\.cloudflare\.com\/turnstile/.test(html)) {
+    throw new Error("Homepage still contains hidden contact-form dependencies.");
   }
   if (!/<canvas id="catalog-canvas"/.test(html)) {
     throw new Error("Homepage catalog canvas missing.");
