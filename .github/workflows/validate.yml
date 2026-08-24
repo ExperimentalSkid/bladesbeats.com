@@ -1,9 +1,9 @@
-name: Validate launch build
+name: Validate website
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, agent/launch-overhaul]
 
 permissions:
   contents: read
@@ -18,4 +18,6 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - run: npm run build:offline
       - run: npm test
+      - run: bash -n deploy/deploy-from-github.sh

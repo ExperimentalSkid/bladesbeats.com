@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const ROOT = path.resolve(__dirname, "..");
 const SITE = "https://bladesbeats.com";
 const BUILD_DATE = process.env.BUILD_DATE || new Date().toISOString().slice(0, 10);
+const SITE_TEMPLATE_LASTMOD = "2026-08-24";
 const ARTIST_ID = `${SITE}/#artist`;
 const BLOCKED_APPLE_ID_PREFIX = "178307293";
 const EXCLUDED_APPLE_IDS = new Set(["0", "3"].map((suffix) => `${BLOCKED_APPLE_ID_PREFIX}${suffix}`));
@@ -80,6 +81,15 @@ function writeFileAtomic(file, contents) {
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, contents, "utf8");
   fs.renameSync(tmp, file);
+}
+
+function writeGeneratedAsset(file, contents) {
+  const target = path.join(ROOT, file);
+  const normalized = `${String(contents).replace(/[ \t]+$/gm, "").trim()}\n`;
+  if (!fs.existsSync(target) || fs.readFileSync(target, "utf8") !== normalized) {
+    writeFileAtomic(target, normalized);
+  }
+  return assetHref(file);
 }
 
 function assetVersion(file) {
@@ -376,15 +386,11 @@ function platformAllowed(release, service) {
 
 function dateMax(dates) {
   const valid = dates.filter(Boolean).sort();
-  return valid[valid.length - 1] || BUILD_DATE;
+  return valid[valid.length - 1] || SITE_TEMPLATE_LASTMOD;
 }
 
-function fileLastmod(file) {
-  try {
-    return fs.statSync(path.join(ROOT, file)).mtime.toISOString().slice(0, 10);
-  } catch (error) {
-    return BUILD_DATE;
-  }
+function pageLastmod(...dates) {
+  return dateMax([SITE_TEMPLATE_LASTMOD, ...dates.flat()].filter(Boolean));
 }
 
 function renderJsonLd(data) {
@@ -501,6 +507,65 @@ function extractHomepageCss() {
   const match = html.match(/<style>([\s\S]*?)<\/style>/);
   if (!match) throw new Error("Could not extract homepage CSS.");
   return match[1];
+}
+
+function staticPageScript() {
+  return `document.querySelectorAll('[data-current-year]').forEach(function(el){el.textContent = new Date().getFullYear();});
+(function(){
+  let lastPlatformFocus = false;
+  function closePlatformModal(modal){
+    if(!modal) return;
+    if(typeof modal.close === "function" && modal.open){
+      modal.close();
+    } else {
+      modal.removeAttribute("open");
+    }
+  }
+  document.addEventListener("click", function(event){
+    const embedLoader = event.target.closest("[data-embed-load]");
+    if(embedLoader){
+      const shell = embedLoader.closest("[data-embed-shell]");
+      const src = embedLoader.getAttribute("data-src");
+      if(!shell || !src) return;
+      const iframe = document.createElement("iframe");
+      iframe.src = src;
+      iframe.loading = "lazy";
+      iframe.title = embedLoader.getAttribute("data-title") || "External media player";
+      iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+      iframe.referrerPolicy = "strict-origin-when-cross-origin";
+      iframe.allowFullscreen = true;
+      shell.classList.remove("embed-consent");
+      shell.textContent = "";
+      shell.appendChild(iframe);
+      return;
+    }
+    const opener = event.target.closest("[data-platform-open]");
+    if(opener){
+      const modal = document.getElementById(opener.getAttribute("aria-controls"));
+      if(!modal) return;
+      lastPlatformFocus = opener;
+      if(typeof modal.showModal === "function" && !modal.open){
+        modal.showModal();
+      } else {
+        modal.setAttribute("open", "");
+      }
+      const focusTarget = modal.querySelector("a,button");
+      if(focusTarget) focusTarget.focus({ preventScroll: true });
+      return;
+    }
+    const closer = event.target.closest("[data-platform-close]");
+    if(closer) closePlatformModal(closer.closest("dialog"));
+  });
+  document.querySelectorAll(".platform-modal").forEach(function(modal){
+    modal.addEventListener("close", function(){
+      if(lastPlatformFocus && document.contains(lastPlatformFocus)) lastPlatformFocus.focus({ preventScroll: true });
+      lastPlatformFocus = false;
+    });
+    modal.addEventListener("click", function(event){
+      if(event.target === modal) closePlatformModal(modal);
+    });
+  });
+}());`;
 }
 
 function basePage({ title, description, canonical, label, h1, intro, body, jsonLd, activeNav, lang = "en", alternates = null, socialImage = `${SITE}/og-card.png`, socialImageWidth = 1200, socialImageHeight = 630, socialImageAlt = "BladesBeats official artist image" }) {
@@ -649,6 +714,11 @@ body.static-page .bb-contact-grid{width:min(1200px,calc(100% - var(--pad-page) *
   body.static-page .booking-main,
   body.static-page .booking-main p{max-width:100%;min-width:0;overflow-wrap:anywhere}
 }`;
+  const generatedStylesHref = writeGeneratedAsset("assets/css/generated-pages.css", `${css}\n${extraCss}`);
+  const generatedScriptHref = writeGeneratedAsset("assets/js/generated-pages.js", staticPageScript());
+  const contactScriptHref = hasContactForm
+    ? writeGeneratedAsset("assets/js/contact-form.js", staticContactScript())
+    : "";
   const displayH1 = String(h1).replace(/\.$/, "");
   const html = `<!DOCTYPE html>
 <html lang="${escapeAttr(lang)}">
@@ -690,10 +760,7 @@ ${imagePreconnect}
 <link rel="stylesheet" href="${assetHref("assets/css/tokens.css")}">
 ${hasContactForm ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>` : ""}
 ${jsonLd ? renderJsonLd(jsonLd) : ""}
-<style>
-${css}
-${extraCss}
-</style>
+<link rel="stylesheet" href="${generatedStylesHref}">
 </head>
 <body class="static-page subpage">
 <a class="skip-link" href="#main">${lang === "es" ? "Saltar al contenido" : "Skip to content"}</a>
@@ -720,63 +787,8 @@ ${extraCss}
   </main>
   ${siteFooter(lang)}
 </div>
-<script>
-document.querySelectorAll('[data-current-year]').forEach(function(el){el.textContent = new Date().getFullYear();});
-(function(){
-  let lastPlatformFocus = false;
-  function closePlatformModal(modal){
-    if(!modal) return;
-    if(typeof modal.close === "function" && modal.open){
-      modal.close();
-    } else {
-      modal.removeAttribute("open");
-    }
-  }
-  document.addEventListener("click", function(event){
-    const embedLoader = event.target.closest("[data-embed-load]");
-    if(embedLoader){
-      const shell = embedLoader.closest("[data-embed-shell]");
-      const src = embedLoader.getAttribute("data-src");
-      if(!shell || !src) return;
-      const iframe = document.createElement("iframe");
-      iframe.src = src;
-      iframe.loading = "lazy";
-      iframe.title = embedLoader.getAttribute("data-title") || "External media player";
-      iframe.allow = "autoplay";
-      shell.classList.remove("embed-consent");
-      shell.textContent = "";
-      shell.appendChild(iframe);
-      return;
-    }
-    const opener = event.target.closest("[data-platform-open]");
-    if(opener){
-      const modal = document.getElementById(opener.getAttribute("aria-controls"));
-      if(!modal) return;
-      lastPlatformFocus = opener;
-      if(typeof modal.showModal === "function" && !modal.open){
-        modal.showModal();
-      } else {
-        modal.setAttribute("open", "");
-      }
-      const focusTarget = modal.querySelector("a,button");
-      if(focusTarget) focusTarget.focus({ preventScroll: true });
-      return;
-    }
-    const closer = event.target.closest("[data-platform-close]");
-    if(closer) closePlatformModal(closer.closest("dialog"));
-  });
-  document.querySelectorAll(".platform-modal").forEach(function(modal){
-    modal.addEventListener("close", function(){
-      if(lastPlatformFocus && document.contains(lastPlatformFocus)) lastPlatformFocus.focus({ preventScroll: true });
-      lastPlatformFocus = false;
-    });
-    modal.addEventListener("click", function(event){
-      if(event.target === modal) closePlatformModal(modal);
-    });
-  });
-}());
-${hasContactForm ? staticContactScript() : ""}
-</script>
+<script defer src="${generatedScriptHref}"></script>
+${contactScriptHref ? `<script defer src="${contactScriptHref}"></script>` : ""}
 </body>
 </html>
 `;
@@ -848,6 +860,54 @@ function isYoutubeOnlyRelease(release) {
   return Array.isArray(release.platformAvailability)
     && release.platformAvailability.length === 1
     && release.platformAvailability[0] === "youtube";
+}
+
+function youtubeEmbedUrl(release) {
+  const id = String(release.youtubeId || "").trim();
+  return /^[A-Za-z0-9_-]{11}$/.test(id)
+    ? `https://www.youtube-nocookie.com/embed/${id}?rel=0`
+    : "";
+}
+
+function formatReleaseDate(date, lang = "en") {
+  const value = String(date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  return new Intl.DateTimeFormat(lang === "es" ? "es-ES" : "en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC"
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function releaseSummary(release, lang = "en") {
+  const isEs = lang === "es";
+  const title = displayReleaseTitle(release);
+  const date = formatReleaseDate(release.releaseDate, lang);
+  const type = releaseTypeLabel(release.type, lang);
+  if (isYoutubeOnlyRelease(release)) {
+    return isEs
+      ? `${title} es un ${type} de BladesBeats publicado${date ? ` el ${date}` : ""} en el canal oficial de YouTube.`
+      : `${title} is a BladesBeats ${type}${date ? ` published on ${date}` : ""} on the official YouTube channel.`;
+  }
+  return isEs
+    ? `${title} es un ${type} oficial de BladesBeats${date ? ` publicado el ${date}` : ""}.`
+    : `${title} is an official BladesBeats ${type}${date ? ` released on ${date}` : ""}.`;
+}
+
+function youtubeEmbedPlaceholder(release, lang = "en") {
+  const embedUrl = youtubeEmbedUrl(release);
+  if (!embedUrl) return "";
+  const isEs = lang === "es";
+  const title = displayReleaseTitle(release);
+  return `<div class="embed video-embed embed-consent" data-embed-shell>
+    <div class="embed-consent-panel">
+      <p class="mixcloud-chart-label">YouTube</p>
+      <p>${isEs ? `Reproduce ${escapeHtml(title)} aquí sin salir de la página.` : `Watch ${escapeHtml(title)} here without leaving the page.`}</p>
+      <p>${isEs ? "El reproductor se conecta a YouTube solo cuando eliges cargarlo." : "The player connects to YouTube only after you choose to load it."}</p>
+      <button class="button primary" type="button" data-embed-load data-src="${escapeAttr(embedUrl)}" data-title="${escapeAttr(title)} YouTube player">${isEs ? "Cargar video de YouTube" : "Load YouTube video"}</button>
+    </div>
+  </div>`;
 }
 
 function releaseTypeLabel(type, lang = "en") {
@@ -1128,9 +1188,26 @@ function releaseDetailSchema(release, detailUrl, description, lang = "en") {
     "mainEntity": { "@id": `${detailUrl}#recording` }
   };
   if (release.image) webpage.primaryImageOfPage = release.image;
+  const graph = [webpage, breadcrumb, recording];
+  const embedUrl = youtubeEmbedUrl(release);
+  if (embedUrl && release.image && release.releaseDate) {
+    const videoId = `${detailUrl}#video`;
+    webpage.video = { "@id": videoId };
+    graph.push({
+      "@type": "VideoObject",
+      "@id": videoId,
+      "name": title,
+      "description": release.longDescription || release.description || description,
+      "thumbnailUrl": [release.image],
+      "uploadDate": `${release.releaseDate}T00:00:00Z`,
+      "embedUrl": embedUrl,
+      "url": detailUrl,
+      "isPartOf": { "@id": `${detailUrl}#webpage` }
+    });
+  }
   return {
     "@context": "https://schema.org",
-    "@graph": [webpage, breadcrumb, recording]
+    "@graph": graph
   };
 }
 
@@ -1261,8 +1338,16 @@ function buildReleasePage(release, lang = "en") {
   const image = release.image || `${SITE}/og-card.png`;
   const socialDimensions = socialImageDimensions(image, { width: 1200, height: 1200 });
   const releaseCopy = isEs
-    ? `${title} es un lanzamiento oficial de BladesBeats.`
-    : (release.longDescription || release.description || `${title} is an official BladesBeats release.`);
+    ? releaseSummary(release, lang)
+    : (release.longDescription || releaseSummary(release, lang));
+  const publishedDate = formatReleaseDate(release.releaseDate, lang) || year;
+  const directPlatformNames = routes.filter((route) => route.direct).map((route) => labelForLink(route.key));
+  const releaseFacts = [
+    [isEs ? "Publicado" : "Released", publishedDate],
+    [isEs ? "Formato" : "Format", releaseTypeLabel(release.type, lang)],
+    [isEs ? "Artista" : "Artist", release.artist || "BladesBeats"],
+    [isEs ? "Enlaces oficiales" : "Official links", directPlatformNames.join(", ")]
+  ].filter(([, value]) => value);
   const platformCopy = isYoutubeOnlyRelease(release)
     ? (isEs ? `Ver ${escapeHtml(title)} en el enlace verificado de YouTube.` : `Watch ${escapeHtml(title)} on the verified YouTube link below.`)
     : hasSearchRoutes
@@ -1282,6 +1367,10 @@ function buildReleasePage(release, lang = "en") {
   <div class="release-detail-body">
     <p class="page-eyebrow">${escapeHtml(year || (isEs ? "Lanzamiento" : "Release"))} &middot; ${escapeHtml(releaseTypeLabel(release.type, lang))}</p>
     <p class="release-detail-text">${escapeHtml(releaseCopy)}</p>
+    <dl class="gig-facts">
+      ${releaseFacts.map(([factLabel, factValue]) => `<div><dt>${escapeHtml(factLabel)}</dt><dd>${escapeHtml(factValue)}</dd></div>`).join("\n      ")}
+    </dl>
+    ${youtubeEmbedPlaceholder(release, lang)}
     <p class="release-detail-text">${platformCopy}</p>
     ${Array.isArray(release.featuredArtists) && release.featuredArtists.length ? `<p class="release-detail-meta"><span>${isEs ? "Con" : "With"}</span> ${escapeHtml(release.featuredArtists.join(", "))}</p>` : ""}
     ${releasePlatformPanel(release, lang, routes)}
@@ -2682,10 +2771,13 @@ function main() {
   const musicFilesEs = [];
   const setFiles = [];
   const setFilesEs = [];
+  const catalogLastmod = pageLastmod(
+    releases.map((item) => item.lastmod || item.releaseDate),
+    sets.map((item) => item.lastmod || item.uploadDate || item.publishedDate),
+    gigs.map((item) => item.lastmod || item.startDate)
+  );
   const sitemap = [
-    { loc: `${SITE}/`, lastmod: BUILD_DATE },
-    { loc: `${SITE}/llms.txt`, lastmod: fileLastmod("llms.txt") },
-    { loc: `${SITE}/llms-full.txt`, lastmod: fileLastmod("llms-full.txt") }
+    { loc: `${SITE}/`, lastmod: catalogLastmod }
   ];
 
   for (const release of releases) {
@@ -2699,8 +2791,9 @@ function main() {
     validatePageHtml(htmlEs, `es/musica/${release.slug}`);
     musicFiles.push([path.join(release.slug, "index.html"), html]);
     musicFilesEs.push([path.join(release.slug, "index.html"), htmlEs]);
-    sitemap.push({ loc: url, lastmod: release.lastmod || BUILD_DATE });
-    sitemap.push({ loc: urlEs, lastmod: release.lastmod || BUILD_DATE });
+    const lastmod = pageLastmod(release.lastmod || release.releaseDate);
+    sitemap.push({ loc: url, lastmod });
+    sitemap.push({ loc: urlEs, lastmod });
   }
 
   for (const set of sets) {
@@ -2718,8 +2811,9 @@ function main() {
     validatePageHtml(htmlEs, `es/sesiones/${set.slug}`);
     setFiles.push([path.join(set.slug, "index.html"), html]);
     setFilesEs.push([path.join(set.slug, "index.html"), htmlEs]);
-    sitemap.push({ loc: url, lastmod: set.lastmod || BUILD_DATE });
-    sitemap.push({ loc: urlEs, lastmod: set.lastmod || BUILD_DATE });
+    const lastmod = pageLastmod(set.lastmod || set.uploadDate || set.publishedDate);
+    sitemap.push({ loc: url, lastmod });
+    sitemap.push({ loc: urlEs, lastmod });
   }
 
   for (const gig of gigs) {
@@ -2731,44 +2825,48 @@ function main() {
     validatePageHtml(htmlEs, `es/eventos/${gig.slug}`);
     gigFiles.push([path.join("gigs", gig.slug, "index.html"), html]);
     gigFilesEs.push([path.join("es", "eventos", gig.slug, "index.html"), htmlEs]);
-    sitemap.push({ loc: url, lastmod: BUILD_DATE });
-    sitemap.push({ loc: urlEs, lastmod: BUILD_DATE });
+    const lastmod = pageLastmod(gig.lastmod || gig.startDate);
+    sitemap.push({ loc: url, lastmod });
+    sitemap.push({ loc: urlEs, lastmod });
   }
 
   const musicIndex = buildMusicIndex(releases, generatedReleaseUrls, sets);
   validatePageHtml(musicIndex, "music index");
   musicFiles.unshift(["index.html", musicIndex]);
-  sitemap.splice(1, 0, { loc: `${SITE}/music/`, lastmod: dateMax(releases.map((item) => item.lastmod)) });
+  const releasesLastmod = pageLastmod(releases.map((item) => item.lastmod || item.releaseDate));
+  sitemap.splice(1, 0, { loc: `${SITE}/music/`, lastmod: releasesLastmod });
 
   const setIndex = buildSetIndex(sets, generatedSetUrls, "en");
   validatePageHtml(setIndex, "dj-sets index");
   setFiles.unshift(["index.html", setIndex]);
-  sitemap.splice(2, 0, { loc: `${SITE}/dj-sets/`, lastmod: dateMax(sets.map((item) => item.lastmod)) });
+  const setsLastmod = pageLastmod(sets.map((item) => item.lastmod || item.uploadDate || item.publishedDate));
+  sitemap.splice(2, 0, { loc: `${SITE}/dj-sets/`, lastmod: setsLastmod });
 
   injectCatalogDataIntoHomepage();
   updateStandaloneAssetVersions();
   validateHomepage();
+  const gigsLastmod = pageLastmod(gigs.map((item) => item.lastmod || item.startDate));
   const staticPages = [
-    ["about/index.html", buildAboutPageDesign("en"), `${SITE}/about/`],
-    ["booking/index.html", buildBookingPage("en"), `${SITE}/booking/`],
-    ["gigs/index.html", buildGigsIndexPage(gigs, "en"), `${SITE}/gigs/`],
-    ["dj-toolkit/index.html", buildDjToolkitPage(), `${SITE}/dj-toolkit/`],
-    ["legal-notice/index.html", buildLegalNoticePage("en"), `${SITE}/legal-notice/`],
-    ["privacy-policy/index.html", buildLegalPrivacyPage("en"), `${SITE}/privacy-policy/`],
-    ["cookie-policy/index.html", buildLegalCookiePage("en"), `${SITE}/cookie-policy/`],
-    ["aviso-legal/index.html", buildLegalNoticePage("es"), `${SITE}/aviso-legal/`],
-    ["politica-privacidad/index.html", buildLegalPrivacyPage("es"), `${SITE}/politica-privacidad/`],
-    ["politica-cookies/index.html", buildLegalCookiePage("es"), `${SITE}/politica-cookies/`],
-    ["es/index.html", buildSpanishHomePage(releases, generatedReleaseUrls, sets, gigs), `${SITE}/es/`],
-    ["es/contratar-dj-sevilla/index.html", buildBookingPage("es"), `${SITE}/es/contratar-dj-sevilla/`],
-    ["es/musica/index.html", buildSpanishMusicPage(releases, generatedReleaseUrlsEs, sets), `${SITE}/es/musica/`],
-    ["es/sesiones/index.html", buildSetIndex(sets, generatedSetUrlsEs, "es"), `${SITE}/es/sesiones/`],
-    ["es/eventos/index.html", buildGigsIndexPage(gigs, "es"), `${SITE}/es/eventos/`],
-    ["es/sobre-bladesbeats/index.html", buildAboutPageDesign("es"), `${SITE}/es/sobre-bladesbeats/`]
+    ["about/index.html", buildAboutPageDesign("en"), `${SITE}/about/`, SITE_TEMPLATE_LASTMOD],
+    ["booking/index.html", buildBookingPage("en"), `${SITE}/booking/`, SITE_TEMPLATE_LASTMOD],
+    ["gigs/index.html", buildGigsIndexPage(gigs, "en"), `${SITE}/gigs/`, gigsLastmod],
+    ["dj-toolkit/index.html", buildDjToolkitPage(), `${SITE}/dj-toolkit/`, SITE_TEMPLATE_LASTMOD],
+    ["legal-notice/index.html", buildLegalNoticePage("en"), `${SITE}/legal-notice/`, SITE_TEMPLATE_LASTMOD],
+    ["privacy-policy/index.html", buildLegalPrivacyPage("en"), `${SITE}/privacy-policy/`, SITE_TEMPLATE_LASTMOD],
+    ["cookie-policy/index.html", buildLegalCookiePage("en"), `${SITE}/cookie-policy/`, SITE_TEMPLATE_LASTMOD],
+    ["aviso-legal/index.html", buildLegalNoticePage("es"), `${SITE}/aviso-legal/`, SITE_TEMPLATE_LASTMOD],
+    ["politica-privacidad/index.html", buildLegalPrivacyPage("es"), `${SITE}/politica-privacidad/`, SITE_TEMPLATE_LASTMOD],
+    ["politica-cookies/index.html", buildLegalCookiePage("es"), `${SITE}/politica-cookies/`, SITE_TEMPLATE_LASTMOD],
+    ["es/index.html", buildSpanishHomePage(releases, generatedReleaseUrls, sets, gigs), `${SITE}/es/`, catalogLastmod],
+    ["es/contratar-dj-sevilla/index.html", buildBookingPage("es"), `${SITE}/es/contratar-dj-sevilla/`, SITE_TEMPLATE_LASTMOD],
+    ["es/musica/index.html", buildSpanishMusicPage(releases, generatedReleaseUrlsEs, sets), `${SITE}/es/musica/`, releasesLastmod],
+    ["es/sesiones/index.html", buildSetIndex(sets, generatedSetUrlsEs, "es"), `${SITE}/es/sesiones/`, setsLastmod],
+    ["es/eventos/index.html", buildGigsIndexPage(gigs, "es"), `${SITE}/es/eventos/`, gigsLastmod],
+    ["es/sobre-bladesbeats/index.html", buildAboutPageDesign("es"), `${SITE}/es/sobre-bladesbeats/`, SITE_TEMPLATE_LASTMOD]
   ];
-  for (const [relative, html, loc] of staticPages) {
+  for (const [relative, html, loc, lastmod] of staticPages) {
     validatePageHtml(html, relative);
-    sitemap.push({ loc, lastmod: BUILD_DATE });
+    sitemap.push({ loc, lastmod });
   }
   const sitemapXml = buildSitemap(sitemap);
   if ((sitemapXml.match(/<loc>/g) || []).length !== sitemap.length) {

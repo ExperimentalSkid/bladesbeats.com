@@ -1,5 +1,28 @@
 # BladesBeats VPS operations
 
+## Direct GitHub deployment to `/var/www/bladesbeats.com`
+
+The public checkout can be updated from the reviewed GitHub branch with the guarded deployment helper. It refuses to overwrite tracked server changes, verifies the repository origin, allows only a fast-forward update, validates the generated site, tests Nginx, reloads it, and then crawls the production sitemap and canonical URLs.
+
+For the first deployment that introduces the helper, run:
+
+```bash
+sudo git -C /var/www/bladesbeats.com fetch origin agent/launch-overhaul && \
+sudo git -C /var/www/bladesbeats.com switch agent/launch-overhaul && \
+sudo git -C /var/www/bladesbeats.com merge --ff-only origin/agent/launch-overhaul && \
+sudo env BLADESBEATS_NGINX_CONFIG=/etc/nginx/sites-available/bladesbeats.com \
+  bash /var/www/bladesbeats.com/deploy/deploy-from-github.sh
+```
+
+For later deployments, the command is:
+
+```bash
+sudo env BLADESBEATS_NGINX_CONFIG=/etc/nginx/sites-available/bladesbeats.com \
+  bash /var/www/bladesbeats.com/deploy/deploy-from-github.sh
+```
+
+If the active virtual-host file has a different name, replace `/etc/nginx/sites-available/bladesbeats.com` with its exact path. The helper accepts only files inside `/etc/nginx/sites-available/` or `/etc/nginx/conf.d/`, saves a timestamped backup, installs the reviewed configuration, and automatically restores the backup if `nginx -t` fails. The verifier deliberately fails if source data, scripts, worker code, Git metadata, or deployment documentation are publicly reachable.
+
 This runbook preserves the required workflow: SSH in, run one command, receive a temporary HTTPS URL and random one-time password, review a private draft, explicitly publish if correct, and press Ctrl+C to remove the panel and host-firewall rule.
 
 ## Before the first server change
