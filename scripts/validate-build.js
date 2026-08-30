@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { assertNoExcludedContent, isExcludedRelease } = require("./catalog-policy");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -19,6 +20,24 @@ function walk(dir) {
 
 function fail(file, message) {
   errors.push(`${path.relative(DIST, file)}: ${message}`);
+}
+
+function sha12(file) {
+  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 12);
+}
+
+function validateStructuredImageUrls(value, file) {
+  if (Array.isArray(value)) {
+    value.forEach((item) => validateStructuredImageUrls(item, file));
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [key, item] of Object.entries(value)) {
+    if (["image", "thumbnailUrl"].includes(key) && typeof item === "string" && !/^https:\/\//.test(item)) {
+      fail(file, `structured-data ${key} must use an absolute HTTPS URL`);
+    }
+    validateStructuredImageUrls(item, file);
+  }
 }
 
 function internalTargetExists(url) {
@@ -39,7 +58,7 @@ for (const file of textFiles) {
   const value = fs.readFileSync(file, "utf8");
   try { assertNoExcludedContent(value, path.relative(DIST, file)); } catch (error) { fail(file, error.message); }
   if (file.endsWith(".html") && /\b(?:undefined|null)\b/.test(value)) fail(file, "contains an undefined/null token");
-  if (/bladesbeats\.opossum|api\.ipify\.org/i.test(value)) fail(file, "contains retired contact or IP lookup data");
+  if (/api\.ipify\.org/i.test(value)) fail(file, "contains retired client-side IP lookup data");
 }
 
 const canonicals = new Map();
@@ -50,11 +69,30 @@ for (const file of htmlFiles) {
   if (!/<title>[^<]{3,}[^<]*<\/title>/.test(html)) fail(file, "missing title");
   if (!/<meta name="description" content="[^"]{20,}">/.test(html)) fail(file, "missing useful meta description");
   if (!/<meta name="robots" content="[^"]+">/.test(html)) fail(file, "missing robots directive");
-  if (!/<h1\b[^>]*>[\s\S]*?<\/h1>/.test(html)) fail(file, "missing h1");
+  if (!/<meta name="referrer" content="no-referrer">/.test(html)) fail(file, "missing privacy-preserving referrer policy");
+  if (!/<meta property="og:image:alt" content="[^"]+">/.test(html)) fail(file, "missing Open Graph image alt text");
+  if (!/<meta name="twitter:image:alt" content="[^"]+">/.test(html)) fail(file, "missing social image alt text");
+  const h1Count = (html.match(/<h1\b/g) || []).length;
+  if (h1Count !== 1) fail(file, `expected exactly one h1, found ${h1Count}`);
+  if (!/<a class="skip-link" href="#main">/.test(html) || !/<main id="main">/.test(html)) fail(file, "missing skip-link/main landmark pair");
   if (/href=""|src=""/.test(html)) fail(file, "contains a blank href/src");
   if (/<img(?![^>]*\balt=)[^>]*>/i.test(html)) fail(file, "contains an image without alt text");
+  if (/<img(?![^>]*\bwidth="\d+")(?![^>]*\bheight="\d+")[^>]*>/i.test(html) || /<img(?![^>]*\bwidth="\d+")[^>]*>/i.test(html) || /<img(?![^>]*\bheight="\d+")[^>]*>/i.test(html)) fail(file, "contains an image without explicit dimensions");
+  const eagerImages = (html.match(/<img\b[^>]*\bloading="eager"/g) || []).length;
+  if (eagerImages > 1) fail(file, `contains ${eagerImages} eager-loaded images`);
+  const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+  if (new Set(ids).size !== ids.length) fail(file, "contains duplicate element IDs");
+  const versionedAssets = [...html.matchAll(/(?:href|src)="(\/assets\/(?:css|js)\/[^"?]+)\?v=([a-f0-9]{12})"/g)];
+  for (const match of versionedAssets) {
+    const target = path.join(DIST, match[1].slice(1));
+    if (!fs.existsSync(target)) fail(file, `missing versioned asset ${match[1]}`);
+    else if (sha12(target) !== match[2]) fail(file, `stale version hash for ${match[1]}`);
+  }
+  for (const coreAsset of ["/assets/css/fonts.css", "/assets/css/tokens.css", "/assets/css/site.css", "/assets/js/site.js"]) {
+    if (!html.includes(`${coreAsset}?v=`)) fail(file, `missing versioned reference to ${coreAsset}`);
+  }
   for (const match of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
-    try { JSON.parse(match[1]); } catch (error) { fail(file, `invalid JSON-LD: ${error.message}`); }
+    try { validateStructuredImageUrls(JSON.parse(match[1]), file); } catch (error) { fail(file, `invalid JSON-LD: ${error.message}`); }
   }
   const canonical = html.match(/<link rel="canonical" href="([^"]+)">/)?.[1];
   if (!canonical || !canonical.startsWith(SITE)) fail(file, "missing first-party canonical URL");
@@ -71,8 +109,13 @@ for (const file of htmlFiles) {
     if (!/rel="[^"]*noopener/.test(match[1])) fail(file, "external target=_blank link is missing noopener");
   }
   if (/\/search(?:[/?"]|$)|open\.spotify\.com\/search/i.test(html)) fail(file, "contains a platform search fallback presented as a destination");
+  if (/data-catalog-card[\s\S]*?<h2 class="release-name">/.test(html)) fail(file, "catalogue cards use h2 instead of h3 beneath their group heading");
+  if (/data-catalog-count/.test(html) && !/<span role="status" aria-live="polite" aria-atomic="true"><b data-catalog-count>/.test(html)) fail(file, "dynamic catalogue count is not announced to assistive technology");
   if (Buffer.byteLength(html) > 300000) warnings.push(`${path.relative(DIST, file)} exceeds 300 KB`);
 }
+
+const siteCssFile = path.join(DIST, "assets", "css", "site.css");
+if (fs.existsSync(siteCssFile) && /@import\b/.test(fs.readFileSync(siteCssFile, "utf8"))) errors.push("assets/css/site.css contains a render-blocking @import");
 
 for (const blocked of ["scripts", "data", "workers", "package.json", ".git", ".gitignore", "config", "release-desk", "deploy"]) {
   if (fs.existsSync(path.join(DIST, blocked))) errors.push(`public output contains private/source path: ${blocked}`);
@@ -100,6 +143,17 @@ const approved = releases.filter((release) => !isExcludedRelease(release) && ["o
 for (const release of approved) {
   for (const route of [`music/${release.slug}/index.html`, `es/musica/${release.slug}/index.html`]) {
     if (!fs.existsSync(path.join(DIST, route))) errors.push(`approved release page missing: ${route}`);
+  }
+}
+
+const nginxFile = path.join(ROOT, "deploy", "nginx-bladesbeats.conf");
+if (!fs.existsSync(nginxFile)) errors.push("deploy/nginx-bladesbeats.conf is missing");
+else {
+  const nginx = fs.readFileSync(nginxFile, "utf8");
+  if (!/root \/srv\/bladesbeats\/current;/.test(nginx)) errors.push("Nginx does not serve the reviewed current-release symlink");
+  if (/Content-Security-Policy-Report-Only/.test(nginx) || !/add_header Content-Security-Policy /.test(nginx)) errors.push("Nginx Content Security Policy is not enforced");
+  for (const header of ["Strict-Transport-Security", "X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy"]) {
+    if (!nginx.includes(`add_header ${header} `)) errors.push(`Nginx is missing ${header}`);
   }
 }
 

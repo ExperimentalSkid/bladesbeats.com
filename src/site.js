@@ -27,6 +27,10 @@
         menuButton.focus();
       }
     });
+    const desktopMenu = window.matchMedia("(min-width: 761px)");
+    desktopMenu.addEventListener("change", function (event) {
+      if (event.matches) closeMenu();
+    });
   }
 
   document.querySelectorAll("[data-current-year]").forEach(function (node) {
@@ -95,7 +99,7 @@
       frame.title = title;
       frame.loading = "lazy";
       frame.allow = type === "mixcloud" ? "autoplay" : "accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share";
-      frame.referrerPolicy = "strict-origin-when-cross-origin";
+      frame.referrerPolicy = "no-referrer";
       frame.allowFullscreen = type !== "mixcloud";
       shell.replaceChildren(frame);
     });

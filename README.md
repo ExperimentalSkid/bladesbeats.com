@@ -18,9 +18,12 @@ npm run build
 npm run validate
 npm test
 npm run catalog:check
+npm run check:links
 ```
 
-`npm run build` writes a clean static site to `dist/`. `npm test` validates all generated routes and runs the Release Desk integration test. `npm run catalog:check` checks official sources and writes review candidates to ignored private state; it does not approve or publish anything.
+`npm run build` deterministically writes the approved catalogue to a clean `dist/` directory without contacting third-party services. `npm test` rebuilds the site, validates every generated route and runs the Release Desk integration test. `npm run catalog:check` checks official sources and writes review candidates to ignored private state; it does not approve or publish anything. `npm run check:links` performs the slower network check of public platform destinations.
+
+Use `npm run catalog:refresh` only when intentionally refreshing the approved source data and cached artwork before review. A normal release build never changes catalogue data.
 
 ## Structure
 
@@ -32,5 +35,7 @@ npm run catalog:check
 - `release-desk/`: temporary authenticated review, preview, publish and rollback panel.
 - `deploy/`: reviewed VPS launcher, constrained publish helper, Nginx reference and systemd timer.
 - `dist/`: generated public output; never use the repository root as the Nginx document root.
+
+The reviewed Nginx configuration serves the immutable release selected by `/srv/bladesbeats/current`. A release requires the explicit `PUBLISH <version>` confirmation in the Release Desk.
 
 VPS setup and operating instructions are in `deploy/OPERATIONS.md`.

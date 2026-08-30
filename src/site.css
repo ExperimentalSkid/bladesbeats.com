@@ -1,5 +1,3 @@
-@import url('/assets/css/tokens.css');
-
 *,*::before,*::after{box-sizing:border-box}
 html{color-scheme:dark;scroll-behavior:smooth}
 body{margin:0;background:var(--night);color:var(--paper);font-family:var(--font-body);font-size:16px;line-height:1.5;overflow-x:hidden}
@@ -160,6 +158,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .filter-button{min-height:48px;padding:0 14px;border:1px solid var(--night-line-2);background:transparent;color:var(--paper-2);font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
 .filter-button:hover,.filter-button[aria-pressed="true"]{border-color:var(--accent);background:rgba(61,123,255,.12);color:var(--paper)}
 .catalog-status{display:flex;justify-content:space-between;gap:20px;margin:0 0 20px;color:var(--paper-3);font-family:var(--font-mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase}
+.catalog-status [role="status"]{font-variant-numeric:tabular-nums}
 .catalog-status a{text-decoration:none}.catalog-status a:hover{color:var(--paper)}
 .catalog-group{padding-block:clamp(42px,6vw,82px);scroll-margin-top:30px;border-bottom:1px solid var(--night-line)}
 .catalog-group:first-of-type{padding-top:24px}
