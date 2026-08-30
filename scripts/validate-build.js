@@ -75,13 +75,15 @@ for (const file of textFiles) {
 }
 
 const canonicals = new Map();
+const descriptions = new Map();
 for (const file of htmlFiles) {
   const html = fs.readFileSync(file, "utf8");
   const relative = path.relative(DIST, file).replace(/\\/g, "/");
   if (!/^<!doctype html>/i.test(html)) fail(file, "missing HTML doctype");
   if (!/<html lang="(?:en|es)">/.test(html)) fail(file, "missing supported document language");
   if (!/<title>[^<]{3,}[^<]*<\/title>/.test(html)) fail(file, "missing title");
-  if (!/<meta name="description" content="[^"]{20,}">/.test(html)) fail(file, "missing useful meta description");
+  const description = html.match(/<meta name="description" content="([^"]{20,})">/)?.[1] || "";
+  if (!description) fail(file, "missing useful meta description");
   if (!/<meta name="robots" content="[^"]+">/.test(html)) fail(file, "missing robots directive");
   if (/<meta name="keywords"/i.test(html)) fail(file, "contains obsolete keyword metadata");
   if (!/<meta name="referrer" content="no-referrer">/.test(html)) fail(file, "missing privacy-preserving referrer policy");
@@ -93,6 +95,12 @@ for (const file of htmlFiles) {
   if (!/<a class="skip-link" href="#main">/.test(html) || !/<main id="main">/.test(html)) fail(file, "missing skip-link/main landmark pair");
   if (/href=""|src=""/.test(html)) fail(file, "contains a blank href/src");
   if (/<img(?![^>]*\balt=)[^>]*>/i.test(html)) fail(file, "contains an image without alt text");
+  for (const match of html.matchAll(/<img\b([^>]*)>/gi)) {
+    const attributes = match[1];
+    if (/\balt=""/.test(attributes) && !/\baria-hidden="true"/.test(attributes) && !/\brole="(?:presentation|none)"/.test(attributes)) {
+      fail(file, "contains an image with empty alt text that is not explicitly decorative");
+    }
+  }
   if (/<img(?![^>]*\bwidth="\d+")(?![^>]*\bheight="\d+")[^>]*>/i.test(html) || /<img(?![^>]*\bwidth="\d+")[^>]*>/i.test(html) || /<img(?![^>]*\bheight="\d+")[^>]*>/i.test(html)) fail(file, "contains an image without explicit dimensions");
   const eagerImages = (html.match(/<img\b[^>]*\bloading="eager"/g) || []).length;
   if (eagerImages > 1) fail(file, `contains ${eagerImages} eager-loaded images`);
@@ -119,6 +127,8 @@ for (const file of htmlFiles) {
   const robots = html.match(/<meta name="robots" content="([^"]+)">/)?.[1] || "";
   if (!canonical || !canonical.startsWith(SITE)) fail(file, "missing first-party canonical URL");
   else if (!/noindex/.test(robots)) {
+    if (descriptions.has(description)) fail(file, `duplicate meta description also used by ${descriptions.get(description)}`);
+    else descriptions.set(description, path.relative(DIST, file));
     for (const preview of ["max-image-preview:large", "max-snippet:-1", "max-video-preview:-1"]) {
       if (!robots.includes(preview)) fail(file, `indexable page is missing ${preview}`);
     }
@@ -140,8 +150,9 @@ for (const file of htmlFiles) {
   if (relative === "es/index.html" && (!["Person", "WebPage"].every((type) => structuredTypes.has(type)) || !/DJ en Sevilla/.test(html))) fail(file, "Spanish homepage is missing core local entity signals");
   if (["about/index.html", "es/sobre-bladesbeats/index.html"].includes(relative) && !structuredTypes.has("ProfilePage")) fail(file, "artist biography is missing ProfilePage structured data");
   if (["booking/index.html", "es/contratar-dj-sevilla/index.html"].includes(relative) && (!["ContactPage", "Service", "Person"].every((type) => structuredTypes.has(type)))) fail(file, "booking page is missing local service structured data");
-  const isDetail = /^(?:music|es\/musica|dj-sets|es\/sesiones|gigs|es\/eventos)\/[^/]+\/index\.html$/.test(relative);
-  if (isDetail && !structuredTypes.has("BreadcrumbList")) fail(file, "detail page is missing BreadcrumbList structured data");
+  const isIndexableSubpage = !/noindex/.test(robots) && !["index.html", "es/index.html"].includes(relative);
+  if (isIndexableSubpage && !structuredTypes.has("BreadcrumbList")) fail(file, "indexable subpage is missing BreadcrumbList structured data");
+  if (isIndexableSubpage && !/<nav class="breadcrumb"[^>]*>[\s\S]*?aria-current="page"/.test(html)) fail(file, "indexable subpage is missing visible breadcrumb navigation");
   if (/^(?:music|es\/musica)\/[^/]+\/index\.html$/.test(relative) && !structuredTypes.has("MusicRecording")) fail(file, "release page is missing MusicRecording structured data");
   if (/data-player-type="video"/.test(html) && !structuredTypes.has("VideoObject")) fail(file, "video release page is missing VideoObject structured data");
   if (/^(?:dj-sets|es\/sesiones)\/[^/]+\/index\.html$/.test(relative) && !structuredTypes.has("AudioObject")) fail(file, "DJ set page is missing AudioObject structured data");
