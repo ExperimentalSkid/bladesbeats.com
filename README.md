@@ -18,12 +18,9 @@ npm run build
 npm run validate
 npm test
 npm run catalog:check
-npm run check:links
 ```
 
-`npm run build` deterministically writes the approved catalogue to a clean `dist/` directory without contacting third-party services. `npm test` rebuilds the site, validates every generated route and runs the Release Desk integration test. `npm run catalog:check` checks official sources and writes review candidates to ignored private state; it does not approve or publish anything. `npm run check:links` performs the slower network check of public platform destinations.
-
-Use `npm run catalog:refresh` only when intentionally refreshing the approved source data and cached artwork before review. A normal release build never changes catalogue data.
+`npm run build` writes a clean static site to `dist/`. `npm test` validates all generated routes and runs the Release Desk integration test. `npm run catalog:check` checks official sources and writes review candidates to ignored private state; it does not approve or publish anything.
 
 ## Structure
 
@@ -35,15 +32,5 @@ Use `npm run catalog:refresh` only when intentionally refreshing the approved so
 - `release-desk/`: temporary authenticated review, preview, publish and rollback panel.
 - `deploy/`: reviewed VPS launcher, constrained publish helper, Nginx reference and systemd timer.
 - `dist/`: generated public output; never use the repository root as the Nginx document root.
-
-The reviewed Nginx configuration serves the immutable release selected by `/srv/bladesbeats/current`. A release requires the explicit `PUBLISH <version>` confirmation in the Release Desk.
-
-## SEO launch checklist
-
-- Keep the generated route set stable. The validator fails if a URL from the previously published sitemap disappears without a redirect plan.
-- After publishing a meaningful update, submit `https://bladesbeats.com/sitemap.xml` in Google Search Console and inspect `/`, `/es/` and `/es/contratar-dj-sevilla/`. Repeated indexing requests do not make crawling faster.
-- Maintain a verified Google Business Profile for the real service area when applicable. Keep the artist name, website, category, Sevilla service area, photos and public profile links consistent; request genuine reviews without incentives.
-- Keep Spotify, Apple Music, YouTube, Mixcloud, Instagram and TikTok profiles pointing back to the canonical website where each platform allows it. Local press, venue, organiser and collaborator links should use the relevant page rather than a generic homepage when possible.
-- Review Search Console queries, pages, indexing and Core Web Vitals after each release. Improve pages from real impressions and booking questions instead of creating thin city or keyword variants.
 
 VPS setup and operating instructions are in `deploy/OPERATIONS.md`.

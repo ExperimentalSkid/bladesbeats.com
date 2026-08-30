@@ -1,8 +1,8 @@
 # BladesBeats VPS operations
 
-## Update the reviewed source checkout
+## Direct GitHub deployment to `/var/www/bladesbeats.com`
 
-The private source checkout can be updated from the reviewed GitHub branch with the guarded helper. It refuses to overwrite tracked server changes, verifies the repository origin, allows only a fast-forward update, then builds and validates a private `dist/` candidate. It does not change the live site; publication still goes through the Release Desk and its explicit confirmation.
+The public checkout can be updated from the reviewed GitHub branch with the guarded deployment helper. It refuses to overwrite tracked server changes, verifies the repository origin, allows only a fast-forward update, validates the generated site, tests Nginx, reloads it, and then crawls the production sitemap and canonical URLs.
 
 For the first deployment that introduces the helper, run:
 
@@ -10,16 +10,20 @@ For the first deployment that introduces the helper, run:
 sudo git -C /var/www/bladesbeats.com fetch origin agent/launch-overhaul && \
 sudo git -C /var/www/bladesbeats.com switch agent/launch-overhaul && \
 sudo git -C /var/www/bladesbeats.com merge --ff-only origin/agent/launch-overhaul && \
-sudo bash /var/www/bladesbeats.com/deploy/deploy-from-github.sh
+sudo env BLADESBEATS_NGINX_CONFIG=/etc/nginx/sites-available/bladesbeats.com \
+  bash /var/www/bladesbeats.com/deploy/deploy-from-github.sh
 ```
 
 For later deployments, the command is:
 
 ```bash
-sudo bash /var/www/bladesbeats.com/deploy/deploy-from-github.sh
+sudo env BLADESBEATS_NGINX_CONFIG=/etc/nginx/sites-available/bladesbeats.com \
+  bash /var/www/bladesbeats.com/deploy/deploy-from-github.sh
 ```
 
-This preserves the required workflow: update reviewed source, start the temporary Release Desk, review a private draft, explicitly publish if correct, and press Ctrl+C to remove the panel and host-firewall rule.
+If the active virtual-host file has a different name, replace `/etc/nginx/sites-available/bladesbeats.com` with its exact path. The helper accepts only files inside `/etc/nginx/sites-available/` or `/etc/nginx/conf.d/`, saves a timestamped backup, installs the reviewed configuration, and automatically restores the backup if `nginx -t` fails. The verifier deliberately fails if source data, scripts, worker code, Git metadata, or deployment documentation are publicly reachable.
+
+This runbook preserves the required workflow: SSH in, run one command, receive a temporary HTTPS URL and random one-time password, review a private draft, explicitly publish if correct, and press Ctrl+C to remove the panel and host-firewall rule.
 
 ## Before the first server change
 
@@ -90,7 +94,7 @@ Press Ctrl+C in SSH to stop the process. The launcher trap terminates the panel,
 
 The constrained helper verifies every SHA-256 hash, rejects source/private paths and symbolic links, tests Nginx, switches the `current` symlink atomically, and performs a local HTTPS health check. If that health check fails, the previous symlink is restored automatically.
 
-Instagram remains the public booking and contact route. Publication is controlled by the reviewed release checks and the explicit Release Desk confirmation phrase.
+Publication also remains disabled until `data/legal.json` contains the approved legal operator name, legal address, tax identification number and legal contact email. Instagram remains the public booking route; the email is used for the legal notice and privacy-rights contact.
 
 ## Rollback
 

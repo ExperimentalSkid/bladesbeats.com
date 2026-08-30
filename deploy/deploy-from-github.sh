@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 SITE_DIR="${BLADESBEATS_SITE_DIR:-/var/www/bladesbeats.com}"
 BRANCH="${BLADESBEATS_BRANCH:-agent/launch-overhaul}"
+NGINX_CONFIG="${BLADESBEATS_NGINX_CONFIG:-}"
 EXPECTED_REPOSITORY="ExperimentalSkid/bladesbeats.com"
 
 [[ "${EUID}" -eq 0 ]] || { echo "Run this deployment with sudo." >&2; exit 1; }
@@ -14,7 +15,7 @@ SITE_REAL="$(readlink -f "${SITE_DIR}" 2>/dev/null || true)"
 }
 [[ -d "${SITE_REAL}/.git" ]] || { echo "${SITE_REAL} is not a Git checkout." >&2; exit 1; }
 
-for command in git node; do
+for command in git node nginx systemctl; do
   command -v "${command}" >/dev/null || { echo "Required command is missing: ${command}" >&2; exit 1; }
 done
 
@@ -42,10 +43,31 @@ PREVIOUS_SHA="$(git -C "${SITE_REAL}" rev-parse HEAD)"
 git -C "${SITE_REAL}" merge --ff-only "origin/${BRANCH}"
 DEPLOYED_SHA="$(git -C "${SITE_REAL}" rev-parse HEAD)"
 
-node "${SITE_REAL}/scripts/build-launch.js"
-node "${SITE_REAL}/scripts/validate-build.js"
+node "${SITE_REAL}/scripts/validate-site.js" "${SITE_REAL}"
 
-echo "Reviewed source updated and the private build validated."
+if [[ -n "${NGINX_CONFIG}" ]]; then
+  NGINX_REAL="$(readlink -f "${NGINX_CONFIG}" 2>/dev/null || true)"
+  case "${NGINX_REAL}" in
+    /etc/nginx/sites-available/*|/etc/nginx/conf.d/*.conf) ;;
+    *) echo "Refusing to replace unexpected Nginx path: ${NGINX_REAL:-missing}" >&2; exit 1 ;;
+  esac
+  [[ -f "${NGINX_REAL}" ]] || { echo "Nginx site configuration not found: ${NGINX_REAL}" >&2; exit 1; }
+  NGINX_BACKUP="${NGINX_REAL}.before-bladesbeats-$(date -u +%Y%m%dT%H%M%SZ)"
+  cp -a "${NGINX_REAL}" "${NGINX_BACKUP}"
+  install -m 0644 "${SITE_REAL}/deploy/nginx-bladesbeats.conf" "${NGINX_REAL}"
+  if ! nginx -t; then
+    cp -a "${NGINX_BACKUP}" "${NGINX_REAL}"
+    nginx -t
+    echo "Nginx validation failed; the previous configuration was restored." >&2
+    exit 1
+  fi
+  echo "Nginx backup: ${NGINX_BACKUP}"
+fi
+
+nginx -t
+systemctl reload nginx
+node "${SITE_REAL}/scripts/verify-production.js" --origin=https://bladesbeats.com
+
+echo "Deployment verified."
 echo "Previous commit: ${PREVIOUS_SHA}"
-echo "Updated commit: ${DEPLOYED_SHA}"
-echo "Run release-desk to prepare, review and explicitly publish this revision."
+echo "Deployed commit: ${DEPLOYED_SHA}"
