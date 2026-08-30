@@ -4,8 +4,10 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const DATA_FILE = path.join(ROOT, "data", "releases.json");
 const ARTIST_ID = "63221ca19GsgTnQISR51xl";
+const APPLE_ARTIST_ID = "1729442137";
 const BUILD_DATE = process.env.BUILD_DATE || new Date().toISOString().slice(0, 10);
 const APPLE_SEARCH_URL = "https://itunes.apple.com/search";
+const APPLE_LOOKUP_URL = "https://itunes.apple.com/lookup";
 const BLOCKED_APPLE_ID_PREFIX = "178307293";
 const EXCLUDED_APPLE_IDS = new Set(["0", "3"].map((suffix) => `${BLOCKED_APPLE_ID_PREFIX}${suffix}`));
 const EXCLUDED_RELEASE_TITLE_KEYS = new Set(["i ll be there", "ill be there"]);
@@ -175,10 +177,18 @@ async function fetchAppleMatches() {
 }
 
 async function fetchAppleSongReleases() {
-  const results = await fetchAppleResults("song");
+  const url = new URL(APPLE_LOOKUP_URL);
+  url.searchParams.set("id", APPLE_ARTIST_ID);
+  url.searchParams.set("entity", "song");
+  url.searchParams.set("country", "ES");
+  url.searchParams.set("limit", "200");
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Apple Music lookup failed with ${response.status}`);
+  const payload = await response.json();
+  const results = Array.isArray(payload.results) ? payload.results : [];
   const byTrack = new Map();
   for (const item of results) {
-    if (normalizeTitle(item.artistName) !== "bladesbeats") continue;
+    if (String(item.artistId || "") !== APPLE_ARTIST_ID) continue;
     if (item.wrapperType !== "track" || item.kind !== "song" || !item.trackName) continue;
     const key = String(item.trackId || normalizeTitle(item.trackName));
     if (!byTrack.has(key)) byTrack.set(key, item);

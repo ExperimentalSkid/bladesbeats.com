@@ -1,5 +1,60 @@
 [
   {
+    "title": "Waiting for the right time",
+    "slug": "waiting-for-the-right-time",
+    "artist": "BladesBeats",
+    "featuredArtists": [],
+    "type": "single",
+    "status": "official",
+    "year": 2026,
+    "description": "Official BladesBeats release listed in Apple Music catalog.",
+    "longDescription": "",
+    "genres": [],
+    "links": {
+      "spotify": "",
+      "appleMusic": "https://music.apple.com/us/album/waiting-for-the-right-time/6803793531?i=6803793534&uo=4",
+      "youtube": "",
+      "deezer": "",
+      "amazonMusic": ""
+    },
+    "image": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/60/49/61/60496130-5f76-1e52-a2af-e7d92305696a/artwork.jpg/1200x1200bb.jpg",
+    "spotifyId": "",
+    "appleMusicId": "6803793534",
+    "youtubeId": "",
+    "lastmod": "2026-08-24",
+    "releaseDate": "2026-08-20",
+    "appleMusicUrl": "https://music.apple.com/us/album/waiting-for-the-right-time/6803793531?i=6803793534&uo=4"
+  },
+  {
+    "title": "Snowgoons - Fight Back ft. Watts (BladesBeats Remix / Edit)",
+    "slug": "snowgoons-fight-back-ft-watts-bladesbeats-remix-edit",
+    "artist": "BladesBeats",
+    "featuredArtists": [],
+    "type": "remix",
+    "status": "official",
+    "year": 2026,
+    "description": "BladesBeats remix on the official YouTube channel.",
+    "longDescription": "",
+    "genres": [],
+    "platformAvailability": [
+      "youtube"
+    ],
+    "links": {
+      "spotify": "",
+      "appleMusic": "",
+      "youtube": "https://www.youtube.com/watch?v=P9ne0Lcwcv8",
+      "deezer": "",
+      "amazonMusic": ""
+    },
+    "image": "https://i.ytimg.com/vi/P9ne0Lcwcv8/hqdefault.jpg",
+    "spotifyId": "",
+    "appleMusicId": "",
+    "youtubeId": "P9ne0Lcwcv8",
+    "lastmod": "2026-08-24",
+    "releaseDate": "2026-08-10",
+    "youtubeUrl": "https://www.youtube.com/watch?v=P9ne0Lcwcv8"
+  },
+  {
     "title": "Héctor Lavoe – Juanito Alimaña (BladesBeats DnB Remix)",
     "slug": "hector-lavoe-juanito-alimana-bladesbeats-dnb-remix",
     "artist": "BladesBeats",
@@ -376,6 +431,32 @@
     "lastmod": "2026-06-06",
     "releaseDate": "2024-12-24",
     "appleMusicUrl": "https://music.apple.com/us/album/nuestra-navidad-en-canal-sur-remix/1787526931?i=1787526932&uo=4"
+  },
+  {
+    "title": "Older",
+    "slug": "older",
+    "artist": "BladesBeats",
+    "featuredArtists": [],
+    "type": "single",
+    "status": "official",
+    "year": 2024,
+    "description": "Official BladesBeats release listed in Apple Music catalog.",
+    "longDescription": "",
+    "genres": [],
+    "links": {
+      "spotify": "",
+      "appleMusic": "https://music.apple.com/es/album/older/1762317005?i=1762317006&uo=4",
+      "youtube": "",
+      "deezer": "",
+      "amazonMusic": ""
+    },
+    "image": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/88/64/ea/8864eac9-d634-477c-0136-6b715d7790f2/artwork.jpg/1200x1200bb.jpg",
+    "spotifyId": "",
+    "appleMusicId": "1762317006",
+    "youtubeId": "",
+    "lastmod": "2026-08-24",
+    "releaseDate": "2024-08-09",
+    "appleMusicUrl": "https://music.apple.com/es/album/older/1762317005?i=1762317006&uo=4"
   },
   {
     "title": "Alina",

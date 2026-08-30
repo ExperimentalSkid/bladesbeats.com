@@ -1,12 +1,16 @@
 {
   "scripts": {
+    "cache:assets": "node scripts/cache-site-assets.js",
     "fetch:spotify": "node scripts/fetch-spotify.js",
     "fetch:mixcloud": "node scripts/fetch-mixcloud.js",
     "fetch:youtube": "node scripts/fetch-youtube.js",
     "fetch": "npm run fetch:spotify && npm run fetch:mixcloud && npm run fetch:youtube",
     "merge": "node scripts/merge-catalog.js",
-    "build": "npm run fetch && npm run merge && node scripts/build-pages.js",
+    "build": "npm run fetch && npm run merge && npm run cache:assets && node scripts/build-pages.js",
     "build:offline": "npm run merge && node scripts/build-pages.js",
+    "validate": "node scripts/validate-site.js",
+    "verify:production": "node scripts/verify-production.js --origin=https://bladesbeats.com",
+    "test": "node --check assets/js/catalog-hero.js && node --check scripts/build-pages.js && node --check scripts/validate-site.js && node --check scripts/verify-production.js && npm run validate",
     "contact:dev": "wrangler dev --config workers/wrangler.contact.toml",
     "contact:deploy": "wrangler deploy --config workers/wrangler.contact.toml"
   }

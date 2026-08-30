@@ -1,10 +1,11 @@
 const fs = require("fs");
 const path = require("path");
-const vm = require("vm");
+const crypto = require("crypto");
 
 const ROOT = path.resolve(__dirname, "..");
 const SITE = "https://bladesbeats.com";
 const BUILD_DATE = process.env.BUILD_DATE || new Date().toISOString().slice(0, 10);
+const SITE_TEMPLATE_LASTMOD = "2026-08-24";
 const ARTIST_ID = `${SITE}/#artist`;
 const BLOCKED_APPLE_ID_PREFIX = "178307293";
 const EXCLUDED_APPLE_IDS = new Set(["0", "3"].map((suffix) => `${BLOCKED_APPLE_ID_PREFIX}${suffix}`));
@@ -12,10 +13,10 @@ const EXCLUDED_RELEASE_TITLE_KEYS = new Set(["i ll be there", "ill be there"]);
 const EXCLUDED_RELEASE_TEXT = ["gabriela bee"];
 
 const PLATFORM_LINKS = [
+  ["YouTube", "https://youtube.com/@bladesbeats"],
   ["Spotify", "https://open.spotify.com/artist/63221ca19GsgTnQISR51xl"],
   ["Apple Music", "https://music.apple.com/us/artist/bladesbeats/1729442137"],
   ["Mixcloud", "https://www.mixcloud.com/BladesBeats/"],
-  ["YouTube", "https://youtube.com/@bladesbeats"],
   ["Instagram", "https://www.instagram.com/blades_beats/"],
   ["TikTok", "https://www.tiktok.com/@bladesbeats"]
 ];
@@ -43,6 +44,24 @@ function readText(file) {
 
 function readJson(file) {
   return JSON.parse(readText(file));
+}
+
+function cachedCatalogImage(item, kind) {
+  const source = String(item.image || "");
+  if (!/^https:\/\//i.test(source)) return item;
+  let provider = "remote";
+  let extension = ".jpg";
+  if (/mzstatic\.com/i.test(source)) provider = "apple";
+  if (/i\.ytimg\.com/i.test(source)) provider = "youtube";
+  if (/thumbnailer\.mixcloud\.com/i.test(source)) {
+    provider = "mixcloud";
+    extension = ".png";
+  }
+  const relative = `assets/media/catalog/${kind}/${item.slug}-${provider}${extension}`;
+  if (!fs.existsSync(path.join(ROOT, relative))) {
+    throw new Error(`Missing cached catalog artwork: ${relative}. Run npm run cache:assets.`);
+  }
+  return { ...item, sourceImage: source, image: `/${relative}` };
 }
 
 function normalizeTitle(value) {
@@ -79,6 +98,70 @@ function writeFileAtomic(file, contents) {
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, contents, "utf8");
   fs.renameSync(tmp, file);
+}
+
+function writeGeneratedAsset(file, contents) {
+  const target = path.join(ROOT, file);
+  const normalized = `${String(contents).replace(/[ \t]+$/gm, "").trim()}\n`;
+  if (!fs.existsSync(target) || fs.readFileSync(target, "utf8") !== normalized) {
+    writeFileAtomic(target, normalized);
+  }
+  return assetHref(file);
+}
+
+function assetVersion(file) {
+  const contents = fs.readFileSync(path.join(ROOT, file));
+  return crypto.createHash("sha256").update(contents).digest("hex").slice(0, 12);
+}
+
+function assetHref(file) {
+  return `/${file}?v=${assetVersion(file)}`;
+}
+
+function injectAssetVersions(html) {
+  return html
+    .replace(
+      /\/assets\/css\/fonts\.css(?:\?v=[a-f0-9]+)?/g,
+      assetHref("assets/css/fonts.css")
+    )
+    .replace(
+      /\/assets\/css\/tokens\.css(?:\?v=[a-f0-9]+)?/g,
+      assetHref("assets/css/tokens.css")
+    )
+    .replace(
+      /\/assets\/js\/catalog-hero\.js(?:\?v=[a-f0-9]+)?/g,
+      assetHref("assets/js/catalog-hero.js")
+    );
+}
+
+function simplifyHomepageShell(html) {
+  let next = html
+    .replace(/\s*<script src="https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js" async defer><\/script>/, "")
+    .replace(
+      '<button type="button" class="site-nav-lang" data-lang-switch>EN / ES</button>',
+      '<a class="site-nav-lang" href="/es/" hreflang="es" lang="es" aria-label="Ver sitio en español">EN / ES</a>'
+    )
+    .replace('href="#listen" data-i18n="home_hero_cta"', 'href="/music/" data-i18n="home_hero_cta"')
+    .replace(/<section class="page" id="releases"[\s\S]*?<\/main>\s*(?=<footer class="site-footer")/, "</main>\n\n")
+    .replace(/\n<script>\s*const COPY = \{[\s\S]*?<\/script>\s*(?=<script defer src="\/assets\/js\/catalog-hero\.js)/, "\n");
+
+  if (/data-page="(?:releases|appearances|story|booking)"/.test(next)) {
+    throw new Error("Homepage still contains a hidden duplicate page.");
+  }
+  if (/data-contact-form|api\.ipify\.org|challenges\.cloudflare\.com\/turnstile/.test(next)) {
+    throw new Error("Homepage still contains contact-form dependencies.");
+  }
+  return next;
+}
+
+function updateStandaloneAssetVersions() {
+  for (const file of ["404.html"]) {
+    const target = path.join(ROOT, file);
+    if (!fs.existsSync(target)) continue;
+    const current = fs.readFileSync(target, "utf8");
+    const next = injectAssetVersions(current);
+    if (next !== current) writeFileAtomic(target, next);
+  }
 }
 
 function readCatalogData() {
@@ -147,7 +230,117 @@ function renderLatestFallbackCard(kind, event) {
         </a>`;
 }
 
-function injectHomepageCatalogFallback(html, catalog = readCatalogData()) {
+const HOMEPAGE_COVER_LIMIT = 24;
+const HOMEPAGE_COVER_COLUMNS = 3;
+
+function homepageCoverDate(item, kind) {
+  if (kind === "release") return item.releaseDate || item.lastmod || "0000-00-00";
+  return item.uploadDate || item.publishedDate || item.lastmod || "0000-00-00";
+}
+
+function homepageCoverImageUrl(image) {
+  return image.replace(/\/\d+x\d+bb\.(jpg|jpeg|png)$/i, "/600x600bb.$1");
+}
+
+function homepageCoverItems(releases, sets) {
+  const distributedReleases = releases
+    .filter((release) => {
+      const links = release.links || {};
+      return release.status === "official"
+        && release.image
+        && (release.appleMusicUrl || links.appleMusic || release.spotifyUrl || links.spotify);
+    })
+    .map((release) => ({
+      id: `release:${release.slug}`,
+      kind: "release",
+      title: release.title,
+      image: homepageCoverImageUrl(release.image),
+      date: homepageCoverDate(release, "release")
+    }));
+  const officialSets = sets
+    .filter((set) => {
+      const links = set.links || {};
+      return set.status === "official" && set.image && (set.mixcloudUrl || links.mixcloud);
+    })
+    .map((set) => ({
+      id: `set:${set.slug}`,
+      kind: "set",
+      title: set.title,
+      image: homepageCoverImageUrl(set.image),
+      date: homepageCoverDate(set, "set")
+    }));
+  const seenImages = new Set();
+  return distributedReleases
+    .concat(officialSets)
+    .sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title))
+    .filter((item) => {
+      if (seenImages.has(item.image)) return false;
+      seenImages.add(item.image);
+      return true;
+    })
+    .slice(0, HOMEPAGE_COVER_LIMIT);
+}
+
+function renderHomepageCoverWall(releases, sets) {
+  const covers = homepageCoverItems(releases, sets);
+  if (covers.length < HOMEPAGE_COVER_COLUMNS) {
+    throw new Error(`Homepage cover wall needs at least ${HOMEPAGE_COVER_COLUMNS} catalogue images.`);
+  }
+  const columns = Array.from({ length: HOMEPAGE_COVER_COLUMNS }, () => []);
+  covers.forEach((cover, index) => columns[index % HOMEPAGE_COVER_COLUMNS].push(cover));
+  const renderImage = (cover) => `<img src="${escapeAttr(cover.image)}" alt="" width="600" height="600" loading="lazy" decoding="async" data-cover-id="${escapeAttr(cover.id)}">`;
+  const renderedColumns = columns.map((column) => {
+    const loop = column.concat(column).map(renderImage).join("\n          ");
+    return `      <div class="home-cover-column">
+        <div class="home-cover-track">
+          ${loop}
+        </div>
+      </div>`;
+  }).join("\n");
+  return `    <div class="home-cover-wall" aria-hidden="true" data-generated-cover-wall data-cover-count="${covers.length}">
+${renderedColumns}
+    </div>`;
+}
+
+function injectHomepageCoverWall(html, releases, sets) {
+  const wall = renderHomepageCoverWall(releases, sets);
+  const existing = /    <div class="home-cover-wall"[^>]*>[\s\S]*?<\/div>\n    <div class="home-cover-scrim"/;
+  if (!existing.test(html)) throw new Error("Could not find homepage cover wall.");
+  return html.replace(existing, `${wall}\n    <div class="home-cover-scrim"`);
+}
+
+function renderHomepageFeaturedRelease(event, releases = []) {
+  const fallback = {
+    title: "Official releases",
+    href: "/music/",
+    image: `${SITE}/og-card.png`,
+    date: ""
+  };
+  const eventSlug = String(event?.url || "").match(/\/music\/([^/]+)\/?$/)?.[1] || "";
+  const release = releases.find((item) => item.slug === eventSlug)
+    || releases.find((item) => item.title === event?.title)
+    || null;
+  const title = event?.title || (release ? displayReleaseTitle(release) : fallback.title);
+  const href = event?.url || (release ? releaseDetailPath(release.slug) : fallback.href);
+  const image = release?.image || fallback.image;
+  const date = event?.date || release?.releaseDate || fallback.date;
+  const numericDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date))
+    ? String(date).split("-").reverse().join(".")
+    : String(date || "");
+  return `<a class="home-feature-release" href="${escapeAttr(href)}" data-featured-release aria-label="Latest release: ${escapeAttr(title)}">
+      <span class="home-feature-kicker" data-i18n="home_feature_label">New release</span>
+      <span class="home-feature-art">
+        <img src="${escapeAttr(image)}" alt="${escapeAttr(title)} cover artwork" width="1200" height="1200" loading="eager" decoding="async" fetchpriority="high" data-featured-release-image>
+      </span>
+      <span class="home-feature-caption">
+        <strong data-featured-release-title>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(numericDate)}</small>
+        <span data-i18n="home_feature_action">Release details &nearr;</span>
+      </span>
+    </a>`;
+}
+
+function injectHomepageCatalogFallback(html, releases = [], catalog = readCatalogData()) {
   const events = validCatalogEvents(catalog);
   const counts = events.reduce((all, event) => {
     all[event.kind] = (all[event.kind] || 0) + 1;
@@ -156,9 +349,16 @@ function injectHomepageCatalogFallback(html, catalog = readCatalogData()) {
   const latestRelease = latestCatalogEvent(events, "release");
   const latestSet = latestCatalogEvent(events, "set");
   const latestReleaseDate = latestRelease?.date ? formatCatalogDate(latestRelease.date) : "2026";
-  const latestReleasePlatform = latestRelease?.appleMusicUrl || latestRelease?.spotifyUrl || latestRelease?.youtubeUrl || "https://music.apple.com/us/artist/bladesbeats/1729442137";
-  const latestReleasePlatformLabel = latestRelease?.appleMusicUrl ? "Apple Music" : latestRelease?.spotifyUrl ? "Spotify" : latestRelease?.youtubeUrl ? "YouTube" : "Open platform";
+  const latestReleaseUrl = latestRelease?.url || "/music/";
+  const latestReleasePlatform = latestRelease
+    ? latestRelease.youtubeUrl || serviceSearchUrl("youtube", latestRelease.title || "BladesBeats")
+    : "https://youtube.com/@bladesbeats";
+  const latestReleasePlatformLabel = "YouTube";
   let next = html
+    .replace(
+      /<a class="home-hero-cta" href="[^"]*" data-i18n="home_hero_cta">/,
+      `<a class="home-hero-cta" href="${escapeAttr(latestReleaseUrl)}" data-i18n="home_hero_cta">`
+    )
     .replace(
       /<section class="home-latest" data-latest-panel aria-label="Latest catalogue highlights"(?: hidden)?>/,
       `<section class="home-latest" data-latest-panel aria-label="Latest catalogue highlights">`
@@ -170,6 +370,10 @@ function injectHomepageCatalogFallback(html, catalog = readCatalogData()) {
     .replace(
       /<a class="home-latest-card" href="[^"]*" data-latest-card="set"[\s\S]*?<\/a>/,
       renderLatestFallbackCard("set", latestSet)
+    )
+    .replace(
+      /<a class="home-feature-release" href="[^"]*" data-featured-release[\s\S]*?<\/a>/,
+      renderHomepageFeaturedRelease(latestRelease, releases)
     );
   const releaseCount = counts.release || 0;
   const setCount = counts.set || 0;
@@ -185,7 +389,7 @@ function injectHomepageCatalogFallback(html, catalog = readCatalogData()) {
   return next;
 }
 
-function injectCatalogDataIntoHomepage() {
+function injectCatalogDataIntoHomepage(releases, sets) {
   const current = readText("index.html");
   const catalog = readCatalogData();
   const block = renderCatalogDataScript();
@@ -200,7 +404,9 @@ function injectCatalogDataIntoHomepage() {
     throw new Error("Could not find homepage script insertion point for catalog data.");
   }
 
-  next = injectHomepageCatalogFallback(next, catalog);
+  next = injectHomepageCoverWall(next, releases, sets);
+  next = simplifyHomepageShell(next);
+  next = injectAssetVersions(injectHomepageCatalogFallback(next, releases, catalog));
   if (next !== current) writeFileAtomic(path.join(ROOT, "index.html"), next);
 }
 
@@ -241,6 +447,88 @@ function escapeAttr(value) {
   return escapeHtml(value);
 }
 
+function compactReleasePageTitle(title, maxLength = 65) {
+  const brand = "BladesBeats";
+  const separator = " | ";
+  const value = String(title || "Release").trim();
+  const full = `${value}${separator}${brand}`;
+  if ([...full].length <= maxLength) return escapeHtml(full);
+
+  const available = Math.max(12, maxLength - [...`${separator}${brand}`].length - 1);
+  let shortened = [...value].slice(0, available).join("").trimEnd();
+  const lastSpace = shortened.lastIndexOf(" ");
+  if (lastSpace >= Math.floor(available * 0.65)) shortened = shortened.slice(0, lastSpace);
+  return escapeHtml(`${shortened.trimEnd()}…${separator}${brand}`);
+}
+
+function compactMetaDescription(value, maxLength = 155) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if ([...text].length <= maxLength) return text;
+  const available = Math.max(24, maxLength - 1);
+  let shortened = [...text].slice(0, available).join("").trimEnd();
+  const lastSpace = shortened.lastIndexOf(" ");
+  if (lastSpace >= Math.floor(available * .72)) shortened = shortened.slice(0, lastSpace);
+  return `${shortened.trimEnd()}…`;
+}
+
+function naturalList(items, lang = "en") {
+  return new Intl.ListFormat(lang === "es" ? "es-ES" : "en-GB", {
+    style: "long",
+    type: "conjunction"
+  }).format(items.filter(Boolean));
+}
+
+function socialImageDimensions(image, fallback = { width: 1200, height: 630 }) {
+  const value = String(image || "");
+  if (/-apple\.jpg(?:\?.*)?$/i.test(value)) return { width: 1200, height: 1200 };
+  if (/-youtube\.jpg(?:\?.*)?$/i.test(value)) return { width: 480, height: 360 };
+  if (/-mixcloud\.png(?:\?.*)?$/i.test(value)) return { width: 600, height: 600 };
+  const apple = value.match(/\/(\d+)x(\d+)bb\.(?:jpe?g|png)(?:\?.*)?$/i);
+  if (apple) return { width: Number(apple[1]), height: Number(apple[2]) };
+
+  const mixcloud = value.match(/\/unsafe\/(\d+)x(\d+)\//i);
+  if (mixcloud) return { width: Number(mixcloud[1]), height: Number(mixcloud[2]) };
+
+  const youtube = value.match(/\/(default|mqdefault|hqdefault|sddefault|maxresdefault)\.(?:jpe?g|webp)(?:\?.*)?$/i);
+  if (youtube) {
+    const sizes = {
+      default: { width: 120, height: 90 },
+      mqdefault: { width: 320, height: 180 },
+      hqdefault: { width: 480, height: 360 },
+      sddefault: { width: 640, height: 480 },
+      maxresdefault: { width: 1280, height: 720 }
+    };
+    return sizes[youtube[1].toLowerCase()] || fallback;
+  }
+
+  return fallback;
+}
+
+function appleArtworkVariant(image, size) {
+  const value = String(image || "");
+  if (!/\/\d+x\d+bb\.(?:jpe?g|png)(?:\?.*)?$/i.test(value)) return "";
+  return value.replace(/\/\d+x\d+bb\.(jpe?g|png)(\?.*)?$/i, `/${size}x${size}bb.$1$2`);
+}
+
+function responsiveImageAttributes(image, sizes) {
+  const variants = [480, 800, 1200]
+    .map((width) => ({ width, url: appleArtworkVariant(image, width) }))
+    .filter((variant) => variant.url);
+  if (!variants.length) return "";
+  const srcset = variants.map((variant) => `${variant.url} ${variant.width}w`).join(", ");
+  return ` srcset="${escapeAttr(srcset)}" sizes="${escapeAttr(sizes)}"`;
+}
+
+function externalImagePreconnect(image) {
+  try {
+    const origin = new URL(String(image || ""), SITE).origin;
+    if (!origin || origin === new URL(SITE).origin) return "";
+    return `<link rel="preconnect" href="${escapeAttr(origin)}" crossorigin>`;
+  } catch {
+    return "";
+  }
+}
+
 function slugify(value) {
   return String(value)
     .toLowerCase()
@@ -265,9 +553,15 @@ function validateUniqueSlugs(items, label) {
 }
 
 function cleanLinks(links) {
+  const priority = ["youtube", "spotify", "appleMusic", "mixcloud", "deezer", "amazonMusic"];
   return Object.entries(links || {})
     .filter(([, url]) => typeof url === "string" && url.trim())
-    .map(([name, url]) => [name, url.trim()]);
+    .map(([name, url]) => [name, url.trim()])
+    .sort(([nameA], [nameB]) => {
+      const rankA = priority.includes(nameA) ? priority.indexOf(nameA) : priority.length;
+      const rankB = priority.includes(nameB) ? priority.indexOf(nameB) : priority.length;
+      return rankA - rankB;
+    });
 }
 
 function hasOfficialLink(item) {
@@ -296,15 +590,11 @@ function platformAllowed(release, service) {
 
 function dateMax(dates) {
   const valid = dates.filter(Boolean).sort();
-  return valid[valid.length - 1] || BUILD_DATE;
+  return valid[valid.length - 1] || SITE_TEMPLATE_LASTMOD;
 }
 
-function fileLastmod(file) {
-  try {
-    return fs.statSync(path.join(ROOT, file)).mtime.toISOString().slice(0, 10);
-  } catch (error) {
-    return BUILD_DATE;
-  }
+function pageLastmod(...dates) {
+  return dateMax([SITE_TEMPLATE_LASTMOD, ...dates.flat()].filter(Boolean));
 }
 
 function renderJsonLd(data) {
@@ -320,7 +610,7 @@ function renderAlternates(alternates) {
   ].join("\n");
 }
 
-function mailtoLegalLink(legal, label = "contacto por correo") {
+function mailtoLegalLink(legal, label = "correo de contacto de BladesBeats") {
   return `<a href="mailto:${escapeAttr(legal.contactEmail)}">${escapeHtml(label)}</a>`;
 }
 
@@ -361,8 +651,9 @@ function staticNav(lang, activeNav, alternates) {
   const urls = lang === "es"
     ? { music: "/es/musica/", sets: "/es/sesiones/", gigs: "/es/eventos/", about: "/es/sobre-bladesbeats/", booking: "/es/contratar-dj-sevilla/" }
     : { music: "/music/", sets: "/dj-sets/", gigs: "/gigs/", about: "/about/", booking: "/booking/" };
-  return `<nav class="site-nav-menu" aria-label="Primary">
-      ${Object.keys(labels).map((key) => `<a class="${activeNav === key ? "active" : ""}" href="${urls[key]}">${labels[key]}</a>`).join("\n      ")}
+  return `<button class="site-nav-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">Menu</button>
+    <nav class="site-nav-menu" id="primary-navigation" aria-label="${lang === "es" ? "Navegación principal" : "Primary navigation"}">
+      ${Object.keys(labels).map((key) => `<a${activeNav === key ? ` class="active" aria-current="page"` : ""} href="${urls[key]}">${labels[key]}</a>`).join("\n      ")}
       ${languageLink(lang, alternates)}
     </nav>`;
 }
@@ -373,19 +664,19 @@ function siteFooter(lang = "en") {
   <div class="site-footer-inner">
     <div class="site-footer-col">
       <p class="site-footer-mark">BladesBeats</p>
-      <p class="site-footer-tagline">${isEs ? "DJ y productor basado en Sevilla, España. Originario de Oslo, Noruega." : "DJ and producer based in Sevilla, Spain. Originally from Oslo, Norway."}</p>
+      <p class="site-footer-tagline">${isEs ? "Música electrónica nacida entre Oslo y Sevilla, hecha para el movimiento, la conexión y la sala." : "Electronic music shaped between Oslo and Sevilla, made for movement, connection, and the room."}</p>
     </div>
     <div class="site-footer-col">
-      <p class="site-footer-label">${isEs ? "Escuchar" : "Listen"}</p>
+      <p class="site-footer-label">${isEs ? "Plataformas" : "Music platforms"}</p>
       <ul class="site-footer-list">
+        <li><a href="https://youtube.com/@bladesbeats" target="_blank" rel="noopener noreferrer">YouTube</a></li>
         <li><a href="https://open.spotify.com/artist/63221ca19GsgTnQISR51xl" target="_blank" rel="noopener noreferrer">Spotify</a></li>
         <li><a href="https://music.apple.com/us/artist/bladesbeats/1729442137" target="_blank" rel="noopener noreferrer">Apple Music</a></li>
         <li><a href="https://www.mixcloud.com/BladesBeats/" target="_blank" rel="noopener noreferrer">Mixcloud</a></li>
-        <li><a href="https://youtube.com/@bladesbeats" target="_blank" rel="noopener noreferrer">YouTube</a></li>
       </ul>
     </div>
     <div class="site-footer-col">
-      <p class="site-footer-label">${isEs ? "Conectar" : "Connect"}</p>
+      <p class="site-footer-label">${isEs ? "Redes y contacto" : "Stay connected"}</p>
       <ul class="site-footer-list">
         <li><a href="https://www.instagram.com/blades_beats/" target="_blank" rel="noopener noreferrer">Instagram</a></li>
         <li><a href="https://www.tiktok.com/@bladesbeats" target="_blank" rel="noopener noreferrer">TikTok</a></li>
@@ -393,7 +684,7 @@ function siteFooter(lang = "en") {
       </ul>
     </div>
     <div class="site-footer-col">
-      <p class="site-footer-label">${isEs ? "Sitio" : "Site"}</p>
+      <p class="site-footer-label">${isEs ? "En la web" : "Around the site"}</p>
       <ul class="site-footer-list">
         <li><a href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Música" : "Music"}</a></li>
         <li><a href="${isEs ? "/es/sesiones/" : "/dj-sets/"}">${isEs ? "Sesiones" : "DJ sets"}</a></li>
@@ -423,13 +714,114 @@ function extractHomepageCss() {
   return match[1];
 }
 
-function basePage({ title, description, canonical, label, h1, intro, body, jsonLd, activeNav, lang = "en", alternates = null, socialImage = `${SITE}/og-card.png`, socialImageWidth = 1200, socialImageHeight = 630, socialImageAlt = "BladesBeats official artist image" }) {
+function staticPageScript() {
+  return `document.querySelectorAll('[data-current-year]').forEach(function(el){el.textContent = new Date().getFullYear();});
+(function(){
+  const nav = document.querySelector(".site-nav");
+  const toggle = nav && nav.querySelector(".site-nav-toggle");
+  const menu = nav && nav.querySelector(".site-nav-menu");
+  if(!nav || !toggle || !menu) return;
+  const mobile = window.matchMedia("(max-width: 720px)");
+  function closeMenu(restoreFocus){
+    menu.removeAttribute("data-open");
+    toggle.setAttribute("aria-expanded", "false");
+    if(restoreFocus) toggle.focus();
+  }
+  function syncNavigation(){
+    nav.toggleAttribute("data-mobile-nav-ready", mobile.matches);
+    if(!mobile.matches) closeMenu(false);
+  }
+  toggle.addEventListener("click", function(){
+    const open = !menu.hasAttribute("data-open");
+    menu.toggleAttribute("data-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+  menu.addEventListener("click", function(event){
+    const target = event.target instanceof Element ? event.target : false;
+    if(mobile.matches && target && target.closest("a")) closeMenu(false);
+  });
+  document.addEventListener("click", function(event){
+    if(mobile.matches && menu.hasAttribute("data-open") && !nav.contains(event.target)) closeMenu(false);
+  });
+  document.addEventListener("keydown", function(event){
+    if(event.key === "Escape" && menu.hasAttribute("data-open")) closeMenu(true);
+  });
+  if(typeof mobile.addEventListener === "function") mobile.addEventListener("change", syncNavigation);
+  syncNavigation();
+}());
+(function(){
+  let lastPlatformFocus = false;
+  function closePlatformModal(modal){
+    if(!modal) return;
+    if(typeof modal.close === "function" && modal.open){
+      modal.close();
+    } else {
+      modal.removeAttribute("open");
+    }
+    document.documentElement.classList.remove("modal-open");
+  }
+  document.addEventListener("click", function(event){
+    const embedLoader = event.target.closest("[data-embed-load]");
+    if(embedLoader){
+      const shell = embedLoader.closest("[data-embed-shell]");
+      const src = embedLoader.getAttribute("data-src");
+      if(!shell || !src) return;
+      const iframe = document.createElement("iframe");
+      iframe.src = src;
+      iframe.loading = "lazy";
+      iframe.title = embedLoader.getAttribute("data-title") || "External media player";
+      iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+      iframe.referrerPolicy = "no-referrer";
+      iframe.allowFullscreen = true;
+      shell.classList.remove("embed-consent");
+      shell.textContent = "";
+      shell.appendChild(iframe);
+      return;
+    }
+    const opener = event.target.closest("[data-platform-open]");
+    if(opener){
+      const modal = document.getElementById(opener.getAttribute("aria-controls"));
+      if(!modal) return;
+      lastPlatformFocus = opener;
+      if(typeof modal.showModal === "function" && !modal.open){
+        modal.showModal();
+      } else {
+        modal.setAttribute("open", "");
+      }
+      document.documentElement.classList.add("modal-open");
+      const focusTarget = modal.querySelector("a,button");
+      if(focusTarget) focusTarget.focus({ preventScroll: true });
+      return;
+    }
+    const closer = event.target.closest("[data-platform-close]");
+    if(closer) closePlatformModal(closer.closest("dialog"));
+  });
+  document.querySelectorAll(".platform-modal").forEach(function(modal){
+    modal.addEventListener("close", function(){
+      document.documentElement.classList.remove("modal-open");
+      if(lastPlatformFocus && document.contains(lastPlatformFocus)) lastPlatformFocus.focus({ preventScroll: true });
+      lastPlatformFocus = false;
+    });
+    modal.addEventListener("click", function(event){
+      if(event.target === modal) closePlatformModal(modal);
+    });
+  });
+}());`;
+}
+
+function basePage({ title, description, canonical, label, h1, intro, body, jsonLd, activeNav, lang = "en", alternates = null, socialImage = `${SITE}/og-card.png`, socialImageWidth = 1200, socialImageHeight = 630, socialImageAlt = "BladesBeats official artist image", bodyClass = "", showPageHead = true }) {
   const css = extractHomepageCss();
   const alternateTags = renderAlternates(alternates);
   const locale = lang === "es" ? "es_ES" : "en_US";
   const alternateLocale = lang === "es" ? "en_US" : "es_ES";
   const hasContactForm = body.includes("data-contact-form");
+  const localizedSocialImageAlt = lang === "es" && socialImageAlt === "BladesBeats official artist image"
+    ? "Imagen oficial del artista BladesBeats"
+    : socialImageAlt;
+  const absoluteSocialImage = absoluteSiteUrl(socialImage);
+  const imagePreconnect = externalImagePreconnect(socialImage);
   const extraCss = `
+html.modal-open{overflow:hidden}
 body.static-page{background:var(--night);color:var(--paper);font-family:var(--font-body)}
 body.static-page::before{display:none}
 body.static-page .site-shell{min-height:100vh;display:block;background:var(--night)}
@@ -442,7 +834,22 @@ body.static-page .button.primary{background:transparent;color:var(--paper);borde
 body.static-page .button.primary:hover{background:transparent;color:var(--accent-2);border-color:var(--accent-2)}
 body.static-page .platform-actions{display:flex;flex-wrap:wrap;gap:12px;margin:0 auto 34px;max-width:1400px;padding:0 var(--pad-page)}
 body.static-page .platform-catalog{margin-bottom:clamp(48px,8vw,96px)}
+body.static-page .catalog-section-head{max-width:1400px;margin:0 auto clamp(24px,4vw,38px);padding:0 var(--pad-page)}
+body.static-page .catalog-section-head span{display:block;margin-bottom:10px;color:var(--accent-2);font-family:var(--font-mono);font-size:10px;letter-spacing:.24em;text-transform:uppercase}
+body.static-page .catalog-section-head h2{max-width:760px;margin:0;color:var(--paper);font-family:var(--font-display);font-size:clamp(32px,4.4vw,58px);line-height:1}
+body.static-page .catalog-section-head p{max-width:62ch;margin:14px 0 0;color:var(--paper-2);font-size:16px;line-height:1.65}
+body.static-page .platform-catalog .catalog-section-head{padding:0}
+body.static-page .release-preview .release-grid{padding-bottom:clamp(48px,7vw,78px)}
+body.static-page .release-preview .release-card-body{min-height:154px;display:flex;flex-direction:column}
+body.static-page .release-preview .release-card-platforms{margin-top:auto;padding-top:12px}
 body.static-page .appearances-grid{max-width:1400px;margin:0 auto clamp(48px,8vw,96px);padding:0 var(--pad-page);display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,360px));justify-content:start;gap:16px}
+body.static-page .gigs-showcase{max-width:1400px;margin:0 auto clamp(48px,8vw,96px);padding:0 var(--pad-page);display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);gap:18px}
+body.static-page .gigs-showcase .appearance-card.featured{height:100%}
+body.static-page .gigs-booking-panel{display:grid;align-content:center;padding:clamp(28px,4vw,48px);border:1px solid rgba(61,123,255,.32);background:linear-gradient(145deg,rgba(61,123,255,.12),rgba(157,91,255,.06) 62%,rgba(7,7,9,.45))}
+body.static-page .gigs-booking-panel span{color:var(--accent-2);font-family:var(--font-mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase}
+body.static-page .gigs-booking-panel h2{margin:14px 0 0;color:var(--paper);font-family:var(--font-display);font-size:clamp(32px,4vw,54px);line-height:.98}
+body.static-page .gigs-booking-panel p{margin:18px 0 24px;color:var(--paper-2);font-size:16px;line-height:1.65}
+body.static-page .gigs-booking-panel .button{justify-self:start}
 body.static-page .meta-row{display:flex;flex-wrap:wrap;gap:8px}
 body.static-page .pill{display:inline-flex;min-height:24px;align-items:center;color:var(--paper-3);font-family:var(--font-mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase}
 body.static-page .pill:not(:last-child)::after{content:"·";margin-left:8px;color:var(--paper-4)}
@@ -458,13 +865,13 @@ body.static-page .embed-consent{min-height:220px;display:grid;place-items:center
 body.static-page .embed-consent-panel{max-width:520px;padding:26px;text-align:left}
 body.static-page .embed-consent-panel p{margin:0 0 14px;color:var(--paper-2)}
 body.static-page .embed-consent-panel .button{margin-top:4px}
-body.static-page .detail-layout{max-width:1200px;margin:0 auto;padding:0 var(--pad-page) clamp(48px,8vw,96px);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:clamp(28px,4vw,56px)}
+body.static-page .detail-layout{max-width:1400px;margin:0 auto;padding:0 var(--pad-page) clamp(48px,8vw,96px);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:clamp(28px,4vw,56px)}
 body.static-page .detail-main,
 body.static-page .detail-side{min-width:0}
 body.static-page .detail-main{font-family:var(--font-display);font-size:clamp(17px,1.9vw,20px);line-height:1.7;color:var(--paper-2)}
 body.static-page .detail-main p{margin:0 0 1.2em}
 body.static-page .detail-side img{width:100%;height:auto;border:1px solid var(--night-line);background:#000}
-body.static-page .legal-layout{max-width:1200px;margin:0 auto;padding:0 var(--pad-page) clamp(48px,8vw,96px);display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,.62fr);gap:clamp(26px,4vw,54px)}
+body.static-page .legal-layout{max-width:1400px;margin:0 auto;padding:0 var(--pad-page) clamp(48px,8vw,96px);display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,.62fr);gap:clamp(26px,4vw,54px)}
 body.static-page .legal-main,
 body.static-page .legal-side{min-width:0}
 body.static-page .legal-main,
@@ -493,8 +900,8 @@ body.static-page .legal-list a:hover{border-color:var(--accent-2);color:var(--ac
 body.static-page .legal-list a[aria-current="page"]{border-color:rgba(61,123,255,.42);background:rgba(61,123,255,.075);color:var(--accent-2)}
 body.static-page .legal-list a::after{content:"->";grid-column:2;grid-row:1 / span 2;color:var(--accent-2)}
 body.static-page .legal-list small{display:block;grid-column:1;margin-top:1px;color:var(--paper-3);font-family:var(--font-body);font-size:12px;letter-spacing:0;text-transform:none}
-body.static-page .story-layout{max-width:1200px;margin:0 auto;padding:0 var(--pad-page) clamp(48px,8vw,96px);display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:clamp(28px,4vw,56px)}
-body.static-page .booking-layout{width:min(1200px,calc(100% - var(--pad-page) * 2));max-width:1200px;margin:0 auto clamp(48px,8vw,96px);padding:0}
+body.static-page .story-layout{max-width:1400px;margin:0 auto;padding:0 var(--pad-page) clamp(48px,8vw,96px);display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:clamp(28px,4vw,56px)}
+body.static-page .booking-layout{width:min(1320px,calc(100% - var(--pad-page) * 2));max-width:1320px;margin:0 auto clamp(48px,8vw,96px);padding:0}
 body.static-page .story-copy{font-family:var(--font-display);font-size:clamp(17px,1.9vw,20px);line-height:1.7;color:var(--paper-2)}
 body.static-page .story-copy p{margin:0 0 1.2em}
 body.static-page .story-copy a{color:var(--accent-2);font-weight:700;text-decoration:none}
@@ -505,7 +912,7 @@ body.static-page .timeline-item{display:grid;grid-template-columns:80px 1fr;gap:
 body.static-page .timeline-item b,
 body.static-page .side-project span,
 body.static-page .contact-line span:first-child{font-family:var(--font-mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--paper-3)}
-body.static-page .timeline-item h3{font-family:var(--font-display);font-size:22px;margin:0 0 6px;color:var(--paper)}
+  body.static-page .timeline-item h2{font-family:var(--font-display);font-size:22px;margin:0 0 6px;color:var(--paper)}
 body.static-page .timeline-item p,
 body.static-page .side-project p{color:var(--paper-2);font-size:14px;line-height:1.55;margin:0}
 body.static-page .side-project{margin-top:18px}
@@ -518,18 +925,155 @@ body.static-page .contact-line{display:grid;grid-template-columns:1fr;gap:7px;ba
 body.static-page .contact-line a:hover{color:var(--accent-2)}
 body.static-page .booking-side .button.primary{border-color:var(--paper);background:var(--paper);color:var(--night);box-shadow:0 18px 50px rgba(61,123,255,.16)}
 body.static-page .booking-side .button.primary:hover{border-color:var(--accent-2);background:var(--accent-2);color:var(--night)}
+body.static-page .form-privacy-notice{display:grid;gap:8px;padding:16px 18px;border:1px solid rgba(61,123,255,.28);background:rgba(61,123,255,.055)}
+body.static-page .form-privacy-notice strong{color:var(--accent-2);font-family:var(--font-mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+body.static-page .form-privacy-notice p{margin:0;color:var(--paper-2);font-size:12px;line-height:1.55}
+body.static-page .form-privacy-notice small{color:var(--paper-3);font-family:var(--font-mono);font-size:9px;line-height:1.5}
+body.static-page .form-privacy-notice a{color:var(--accent-2);font-weight:700;text-decoration:none}
+body.static-page .form-privacy-notice a:hover{text-decoration:underline}
 body.static-page .contact-form.is-handoff .form-field:not(.contact-type-field),
-body.static-page .contact-form.is-handoff .form-meta,
+body.static-page .contact-form.is-handoff .form-privacy-notice,
 body.static-page .contact-form.is-handoff .turnstile-slot,
 body.static-page .contact-form.is-handoff .contact-submit{opacity:.32;filter:saturate(.45);pointer-events:none}
 body.static-page .contact-form.is-handoff .form-field:not(.contact-type-field) .bb-input,
 body.static-page .contact-form.is-handoff .contact-submit{cursor:not-allowed}
-body.static-page .story-layout{max-width:1280px;margin:0 auto;padding:0 var(--pad-page) clamp(48px,8vw,96px);display:grid;grid-template-columns:1fr;gap:clamp(30px,5vw,64px)}
+body.static-page .story-layout{max-width:1400px;margin:0 auto;padding:0 var(--pad-page) clamp(48px,8vw,96px);display:grid;grid-template-columns:1fr;gap:clamp(30px,5vw,64px)}
 body.static-page .story-feature{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:clamp(28px,4vw,52px);align-items:start}
 body.static-page .story-copy{font-family:var(--font-body);font-size:22px;line-height:1.72;color:var(--paper)}
 body.static-page .story-intro{font-family:var(--font-display);font-size:clamp(28px,3.3vw,44px);line-height:1.18;color:var(--paper)}
 body.static-page .story-flow p{font-family:var(--font-body);font-size:clamp(17px,1.7vw,20px);line-height:1.72;color:var(--paper-2)}
-body.static-page .bb-contact-grid{width:min(1200px,calc(100% - var(--pad-page) * 2));max-width:1200px;margin:0 auto clamp(48px,8vw,96px)}
+body.static-page .bb-contact-grid{width:min(1320px,calc(100% - var(--pad-page) * 2));max-width:1320px;margin:0 auto clamp(48px,8vw,96px)}
+body.release-page{--release-cyan:#1AD9FF;--release-pink:#F25ACD;background:#050713}
+body.release-page .site-nav{position:relative;z-index:20;background:rgba(5,7,19,.9);border-color:rgba(233,238,251,.12);backdrop-filter:blur(18px)}
+body.release-page .page-shell{overflow:hidden;background:#050713}
+body.release-page .release-poster{position:relative;min-height:calc(100svh - 61px);overflow:hidden;isolation:isolate;background:#050713}
+body.release-page .release-poster-backdrop{position:absolute;z-index:-3;inset:-12%;width:124%;height:124%;object-fit:cover;filter:blur(86px) saturate(1.2);opacity:.22;transform:scale(1.08)}
+body.release-page .release-poster::before{content:"";position:absolute;z-index:-2;inset:0;background:linear-gradient(96deg,rgba(5,7,19,.98) 2%,rgba(5,7,19,.78) 45%,rgba(5,7,19,.9) 100%),radial-gradient(80% 70% at 78% 28%,rgba(242,90,205,.13),transparent 64%)}
+body.release-page .release-poster::after{content:"";position:absolute;z-index:-1;inset:0;pointer-events:none;background:linear-gradient(rgba(233,238,251,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(233,238,251,.018) 1px,transparent 1px);background-size:86px 86px;mask-image:linear-gradient(180deg,#000,transparent 92%)}
+body.release-page .release-poster-inner{width:min(1400px,100%);min-height:inherit;margin:0 auto;padding:20px var(--pad-page) clamp(54px,7vw,98px);display:grid;align-content:center}
+body.release-page .release-poster .breadcrumb{width:100%;max-width:none;margin:0 0 clamp(34px,5vw,64px);padding:0;color:var(--paper-3)}
+body.release-page .release-poster-grid{display:grid;grid-template-columns:minmax(300px,.82fr) minmax(0,1.18fr);gap:clamp(42px,7vw,112px);align-items:center}
+body.release-page .release-poster-art{position:relative;min-width:0;isolation:isolate}
+body.release-page .release-poster-art::before{content:"";position:absolute;z-index:-1;inset:22px -14px -16px 24px;border:1px solid rgba(26,217,255,.7);transform:rotate(2deg)}
+body.release-page .release-poster-art::after{content:"";position:absolute;z-index:2;right:-18px;bottom:10%;width:52%;height:2px;background:linear-gradient(90deg,var(--release-pink),transparent);box-shadow:0 0 28px rgba(242,90,205,.72)}
+body.release-page .release-poster-art img{width:100%;height:auto;aspect-ratio:1;object-fit:cover;background:#000;border:1px solid rgba(233,238,251,.16);box-shadow:0 42px 110px rgba(0,0,0,.58);transform:rotate(-1deg)}
+body.release-page .release-poster-number{position:absolute;z-index:3;top:-16px;left:-16px;display:inline-flex;min-height:36px;align-items:center;padding:0 13px;background:var(--release-pink);color:#090B18;font-family:var(--font-mono);font-size:9px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;transform:rotate(-4deg)}
+body.release-page .release-poster-copy{min-width:0}
+body.release-page .release-poster-eyebrow{margin:0 0 22px;color:var(--release-cyan);font-family:var(--font-mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase}
+body.release-page .release-poster-title{max-width:900px;margin:0;color:var(--paper);font-family:var(--font-display);font-size:clamp(52px,7.4vw,116px);font-weight:700;letter-spacing:-.058em;line-height:.84;overflow-wrap:anywhere;text-wrap:balance}
+body.release-page .release-poster-date{display:flex;align-items:center;gap:14px;margin:24px 0 0;color:var(--paper-3);font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase}
+body.release-page .release-poster-date::before{content:"";width:54px;height:1px;background:var(--release-pink)}
+body.release-page .release-poster-lead{max-width:58ch;margin:28px 0 0;color:var(--paper-2);font-family:var(--font-body);font-size:clamp(16px,1.5vw,19px);line-height:1.65}
+body.release-page .release-poster-actions{display:grid;grid-template-columns:minmax(210px,.7fr) minmax(0,1fr);gap:18px;align-items:stretch;margin-top:34px}
+body.release-page .release-poster-primary{display:grid;align-content:center;gap:3px;min-height:76px;padding:14px 20px;background:linear-gradient(105deg,var(--release-cyan),#5FB5FF 72%,var(--release-pink) 150%);clip-path:polygon(0 0,calc(100% - 15px) 0,100% 15px,100% 100%,15px 100%,0 calc(100% - 15px));color:#090B18;text-decoration:none;transition:transform .22s var(--ease),filter .22s var(--ease)}
+body.release-page .release-poster-primary:hover,body.release-page .release-poster-primary:focus-visible{transform:translateY(-3px);filter:brightness(1.1)}
+body.release-page .release-poster-primary span{font-family:var(--font-mono);font-size:8px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}
+body.release-page .release-poster-primary strong{font-family:var(--font-display);font-size:21px;line-height:1.05}
+body.release-page .release-poster-services{display:flex;flex-wrap:wrap;align-content:center;gap:8px 16px;border-top:1px solid var(--night-line);border-bottom:1px solid var(--night-line);padding:12px 0}
+body.release-page .release-poster-services a{color:var(--paper-2);font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:.16em;text-decoration:none;text-transform:uppercase}
+body.release-page .release-poster-services a:hover,body.release-page .release-poster-services a:focus-visible{color:var(--release-cyan)}
+body.release-page .release-editorial{background:var(--paper);color:#090B18}
+body.release-page .release-editorial-inner{width:min(1400px,100%);margin:0 auto;padding:clamp(64px,7vw,92px) var(--pad-page);display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.76fr);gap:clamp(48px,6vw,80px);align-items:center}
+body.release-page .release-editorial-kicker{margin:0 0 16px;color:#43506c;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.24em;text-transform:uppercase}
+body.release-page .release-editorial h2{max-width:620px;margin:0;color:#090B18;font-family:var(--font-display);font-size:clamp(40px,4.4vw,58px);font-weight:700;letter-spacing:-.035em;line-height:.98;text-wrap:balance}
+body.release-page .release-editorial-copy{max-width:52ch;margin:22px 0 0;color:#30384d;font-size:clamp(16px,1.45vw,18px);line-height:1.68}
+body.release-page .release-editorial-meta{margin:22px 0 0;color:#43506c;font-family:var(--font-mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+body.release-page .release-editorial-meta span{color:#090B18;font-weight:800}
+body.release-page .release-editorial .gig-facts{grid-template-columns:1fr;margin:0;background:rgba(9,11,24,.16);border-color:rgba(9,11,24,.16)}
+body.release-page .release-editorial .gig-facts div{display:grid;grid-template-columns:minmax(100px,.55fr) minmax(0,1fr);gap:20px;align-items:baseline;background:var(--paper);padding:16px 18px}
+body.release-page .release-editorial .gig-facts dt{color:#5c667e}
+body.release-page .release-editorial .gig-facts dd{margin:0;color:#090B18;font-family:var(--font-display);font-size:18px;font-weight:700;text-align:right;overflow-wrap:anywhere}
+body.release-page .release-editorial-media{grid-column:1/-1;margin-top:clamp(4px,3vw,30px)}
+body.release-page .release-editorial .embed{border-color:#090B18;box-shadow:0 28px 80px rgba(9,11,24,.18)}
+body.release-page .release-editorial .embed-consent{background:#090B18;color:var(--paper)}
+body.release-page .release-neighbors{background:#050713;border-top:1px solid var(--night-line)}
+body.release-page .release-neighbors-inner{width:min(1400px,100%);margin:0 auto;padding:clamp(42px,6vw,74px) var(--pad-page);display:grid;grid-template-columns:1fr auto 1fr;gap:22px;align-items:stretch}
+body.release-page .release-neighbor{min-width:0;display:grid;align-content:space-between;gap:14px;padding:18px 0;border-top:1px solid var(--night-line);border-bottom:1px solid var(--night-line);color:var(--paper);text-decoration:none;transition:padding .22s var(--ease),border-color .22s var(--ease)}
+body.release-page .release-neighbor:hover,body.release-page .release-neighbor:focus-visible{padding-left:8px;padding-right:8px;border-color:var(--release-cyan)}
+body.release-page .release-neighbor.next{text-align:right}
+body.release-page .release-neighbor span,body.release-page .release-catalog-link{color:var(--paper-3);font-family:var(--font-mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase}
+body.release-page .release-neighbor strong{font-family:var(--font-display);font-size:clamp(18px,2vw,26px);line-height:1.05;overflow-wrap:anywhere}
+body.release-page .release-catalog-link{display:inline-flex;align-items:center;justify-content:center;padding:0 18px;color:var(--release-cyan);text-decoration:none;white-space:nowrap}
+body.release-page .release-catalog-link:hover{color:var(--paper)}
+/* Keep recurring labels and reading text consistent on every generated page. */
+body.static-page .catalog-section-head span,
+body.static-page .gigs-booking-panel span,
+body.static-page .pill,
+body.static-page .mixcloud-chart-label,
+body.static-page .legal-section-kicker,
+body.static-page .legal-panel span,
+body.static-page .legal-list a,
+body.static-page .timeline-item b,
+body.static-page .side-project span,
+body.static-page .contact-line span:first-child,
+body.release-page .release-poster-number,
+body.release-page .release-poster-eyebrow,
+body.release-page .release-poster-date,
+body.release-page .release-poster-primary span,
+body.release-page .release-poster-services a,
+body.release-page .release-editorial-kicker,
+body.release-page .release-editorial-meta,
+body.release-page .release-neighbor span,
+body.release-page .release-catalog-link{
+  line-height:1.45;
+  letter-spacing:.14em;
+}
+body.static-page .catalog-section-head span,
+body.static-page .gigs-booking-panel span,
+body.static-page .pill,
+body.static-page .mixcloud-chart-label,
+body.static-page .legal-section-kicker,
+body.static-page .legal-panel span,
+body.static-page .timeline-item b,
+body.static-page .side-project span,
+body.static-page .contact-line span:first-child,
+body.release-page .release-poster-eyebrow,
+body.release-page .release-poster-date,
+body.release-page .release-editorial-kicker,
+body.release-page .release-editorial-meta{
+  font-size:11px;
+}
+body.static-page .catalog-section-head h2,
+body.static-page .gigs-booking-panel h2,
+body.static-page .legal-section h2,
+body.static-page .timeline-item h2,
+body.release-page .release-editorial h2,
+body.release-page .release-neighbor strong{
+  text-wrap:balance;
+}
+body.static-page .catalog-section-head p,
+body.static-page .gigs-booking-panel p,
+body.static-page .detail-main p,
+body.static-page .legal-section p,
+body.static-page .legal-panel p,
+body.static-page .story-copy p,
+body.static-page .timeline-item p,
+body.static-page .side-project p,
+body.release-page .release-poster-lead,
+body.release-page .release-editorial-copy{
+  text-wrap:pretty;
+}
+body.static-page .catalog-section-head p,
+body.static-page .detail-main p,
+body.static-page .legal-section p,
+body.static-page .story-flow p,
+body.release-page .release-poster-lead,
+body.release-page .release-editorial-copy{
+  max-width:68ch;
+}
+body.static-page .catalog-section-head h2{line-height:1.04}
+body.static-page .legal-section h2{line-height:1.12}
+body.static-page .legal-section p{font-size:16px;line-height:1.75}
+body.static-page .timeline-item h2{line-height:1.18}
+body.release-page .release-poster-title{line-height:.9;letter-spacing:-.045em}
+body.release-page .release-poster-lead{line-height:1.7}
+body.release-page .release-editorial-copy{line-height:1.75}
+@media(max-width:980px){
+  body.release-page .release-poster-grid{grid-template-columns:minmax(240px,.72fr) minmax(0,1.28fr);gap:42px}
+  body.release-page .release-poster-title{font-size:clamp(48px,7vw,72px)}
+  body.release-page .release-poster-actions{grid-template-columns:1fr}
+  body.release-page .release-editorial-inner{grid-template-columns:1fr;gap:44px}
+}
 @media(max-width:1120px){
   body.static-page .booking-layout{grid-template-columns:minmax(0,1fr) minmax(280px,.72fr)}
   body.static-page .booking-main{border-right:1px solid var(--night-line);border-bottom:0}
@@ -540,8 +1084,24 @@ body.static-page .bb-contact-grid{width:min(1200px,calc(100% - var(--pad-page) *
 @media(max-width:900px){
   body.static-page .booking-layout{grid-template-columns:1fr}
   body.static-page .booking-main{border-right:0;border-bottom:1px solid var(--night-line)}
+  body.static-page .gigs-showcase{grid-template-columns:1fr}
 }
 @media(max-width:720px){
+  body.release-page .release-poster{min-height:0}
+  body.release-page .release-poster-inner{padding-top:18px;padding-bottom:70px}
+  body.release-page .release-poster .breadcrumb{margin-bottom:42px}
+  body.release-page .release-poster-grid{grid-template-columns:1fr;gap:54px}
+  body.release-page .release-poster-art{width:calc(100% - 16px);margin-left:16px}
+  body.release-page .release-poster-title{font-size:clamp(50px,15vw,76px)}
+  body.release-page .release-poster-actions{margin-top:28px}
+  body.release-page .release-poster-services{padding:16px 0}
+  body.release-page .release-editorial-inner{padding-top:64px;padding-bottom:64px}
+  body.release-page .release-editorial h2{font-size:clamp(34px,10vw,46px)}
+  body.release-page .release-editorial .gig-facts div{grid-template-columns:1fr;gap:6px}
+  body.release-page .release-editorial .gig-facts dd{text-align:left}
+  body.release-page .release-neighbors-inner{grid-template-columns:1fr;gap:12px}
+  body.release-page .release-neighbor.next{text-align:left}
+  body.release-page .release-catalog-link{min-height:48px;justify-content:flex-start;padding:0}
   body.static-page{overflow-x:hidden}
   body.static-page .page,
   body.static-page .page-shell,
@@ -567,9 +1127,19 @@ body.static-page .bb-contact-grid{width:min(1200px,calc(100% - var(--pad-page) *
   body.static-page .story-copy p,
   body.static-page .booking-main,
   body.static-page .booking-main p{max-width:100%;min-width:0;overflow-wrap:anywhere}
+  body.static-page .appearance-modal{padding:12px}
+  body.static-page .appearance-dialog{width:100%;max-height:calc(100dvh - 24px);padding:20px}
+  body.static-page .catalog-section-head h2{font-size:clamp(32px,10vw,46px)}
+  body.static-page .gigs-showcase .appearance-card.featured{grid-template-columns:1fr}
+  body.static-page .gigs-showcase .appearance-card.featured .appearance-mark{min-height:0;aspect-ratio:16/10;border-right:0;border-bottom:1px solid var(--line)}
 }`;
+  const generatedStylesHref = writeGeneratedAsset("assets/css/generated-pages.css", `${css}\n${extraCss}`);
+  const generatedScriptHref = writeGeneratedAsset("assets/js/generated-pages.js", staticPageScript());
+  const contactScriptHref = hasContactForm
+    ? writeGeneratedAsset("assets/js/contact-form.js", staticContactScript())
+    : "";
   const displayH1 = String(h1).replace(/\.$/, "");
-  return `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="${escapeAttr(lang)}">
 <head>
 <meta charset="utf-8">
@@ -589,114 +1159,55 @@ ${alternateTags}
 <meta property="og:title" content="${escapeAttr(title.replace(/&mdash;/g, "-"))}">
 <meta property="og:description" content="${escapeAttr(description)}">
 <meta property="og:url" content="${escapeAttr(canonical)}">
-<meta property="og:image" content="${escapeAttr(socialImage)}">
+<meta property="og:image" content="${escapeAttr(absoluteSocialImage)}">
 <meta property="og:image:width" content="${escapeAttr(socialImageWidth)}">
 <meta property="og:image:height" content="${escapeAttr(socialImageHeight)}">
-<meta property="og:image:alt" content="${escapeAttr(socialImageAlt)}">
+<meta property="og:image:alt" content="${escapeAttr(localizedSocialImageAlt)}">
 <meta property="og:locale" content="${locale}">
 <meta property="og:locale:alternate" content="${alternateLocale}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${escapeAttr(title.replace(/&mdash;/g, "-"))}">
 <meta name="twitter:description" content="${escapeAttr(description)}">
-<meta name="twitter:image" content="${escapeAttr(socialImage)}">
-<meta name="twitter:image:alt" content="${escapeAttr(socialImageAlt)}">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"></noscript>
-<link rel="stylesheet" href="/assets/css/tokens.css">
+<meta name="twitter:image" content="${escapeAttr(absoluteSocialImage)}">
+<meta name="twitter:image:alt" content="${escapeAttr(localizedSocialImageAlt)}">
+${imagePreconnect}
+<link rel="stylesheet" href="${assetHref("assets/css/fonts.css")}">
+<link rel="stylesheet" href="${assetHref("assets/css/tokens.css")}">
 ${hasContactForm ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>` : ""}
 ${jsonLd ? renderJsonLd(jsonLd) : ""}
-<style>
-${css}
-${extraCss}
-</style>
+<link rel="stylesheet" href="${generatedStylesHref}">
 </head>
-<body class="static-page subpage">
+<body class="static-page subpage${bodyClass ? ` ${escapeAttr(bodyClass)}` : ""}">
+<a class="skip-link" href="#main">${lang === "es" ? "Saltar al contenido" : "Skip to content"}</a>
 <div class="site-shell">
   <header class="site-nav" role="banner">
     <div class="site-nav-inner">
-      <a class="site-nav-mark" href="${lang === "es" ? "/es/" : "/"}" aria-label="BladesBeats home">BladesBeats</a>
+      <a class="site-nav-mark" href="${lang === "es" ? "/es/" : "/"}" aria-label="${lang === "es" ? "Inicio de BladesBeats" : "BladesBeats home"}">BladesBeats</a>
       <span class="site-nav-rule" aria-hidden="true"></span>
       ${staticNav(lang, activeNav, alternates)}
     </div>
   </header>
-  <main class="page active">
+  <main class="page active" id="main">
     <div class="page-shell">
-      <section class="page-head">
+      ${showPageHead ? `<section class="page-head">
         <p class="page-eyebrow">${escapeHtml(label)}</p>
         <div>
-          <h1 class="page-title">${escapeHtml(displayH1)}<span class="page-title-dot">.</span></h1>
+          <h1 class="page-title">${escapeHtml(displayH1)}<span class="page-title-dot" aria-hidden="true">.</span></h1>
           <span class="page-rule" aria-hidden="true"></span>
           <p class="page-subtitle">${escapeHtml(intro)}</p>
         </div>
-      </section>
+      </section>` : ""}
       ${body}
     </div>
   </main>
   ${siteFooter(lang)}
 </div>
-<script>
-document.querySelectorAll('[data-current-year]').forEach(function(el){el.textContent = new Date().getFullYear();});
-(function(){
-  let lastPlatformFocus = false;
-  function closePlatformModal(modal){
-    if(!modal) return;
-    if(typeof modal.close === "function" && modal.open){
-      modal.close();
-    } else {
-      modal.removeAttribute("open");
-    }
-  }
-  document.addEventListener("click", function(event){
-    const embedLoader = event.target.closest("[data-embed-load]");
-    if(embedLoader){
-      const shell = embedLoader.closest("[data-embed-shell]");
-      const src = embedLoader.getAttribute("data-src");
-      if(!shell || !src) return;
-      const iframe = document.createElement("iframe");
-      iframe.src = src;
-      iframe.loading = "lazy";
-      iframe.title = embedLoader.getAttribute("data-title") || "External media player";
-      iframe.allow = "autoplay";
-      shell.classList.remove("embed-consent");
-      shell.textContent = "";
-      shell.appendChild(iframe);
-      return;
-    }
-    const opener = event.target.closest("[data-platform-open]");
-    if(opener){
-      const modal = document.getElementById(opener.getAttribute("aria-controls"));
-      if(!modal) return;
-      lastPlatformFocus = opener;
-      if(typeof modal.showModal === "function" && !modal.open){
-        modal.showModal();
-      } else {
-        modal.setAttribute("open", "");
-      }
-      const focusTarget = modal.querySelector("a,button");
-      if(focusTarget) focusTarget.focus({ preventScroll: true });
-      return;
-    }
-    const closer = event.target.closest("[data-platform-close]");
-    if(closer) closePlatformModal(closer.closest("dialog"));
-  });
-  document.querySelectorAll(".platform-modal").forEach(function(modal){
-    modal.addEventListener("close", function(){
-      if(lastPlatformFocus && document.contains(lastPlatformFocus)) lastPlatformFocus.focus({ preventScroll: true });
-      lastPlatformFocus = false;
-    });
-    modal.addEventListener("click", function(event){
-      if(event.target === modal) closePlatformModal(modal);
-    });
-  });
-}());
-${hasContactForm ? staticContactScript() : ""}
-</script>
+<script defer src="${generatedScriptHref}"></script>
+${contactScriptHref ? `<script defer src="${contactScriptHref}"></script>` : ""}
 </body>
 </html>
 `;
+  return html.replace(/[ \t]+$/gm, "");
 }
 
 function platformButtons(links, small = false) {
@@ -710,10 +1221,9 @@ function mixcloudEmbedPlaceholder(set, lang = "en") {
   const isEs = lang === "es";
   return `<div class="embed embed-consent" data-embed-shell>
     <div class="embed-consent-panel">
-      <p class="mixcloud-chart-label">Mixcloud player</p>
-      <p>${isEs ? "El reproductor de Mixcloud se carga solo cuando eliges abrirlo." : "The Mixcloud player is loaded from Mixcloud only after you choose to open it."}</p>
-      <p>${isEs ? "Al cargar el reproductor, Mixcloud puede aplicar sus propias cookies y políticas." : "When the player loads, Mixcloud may apply its own cookies and policies."}</p>
-      <button class="button primary" type="button" data-embed-load data-src="${escapeAttr(set.embedUrl)}" data-title="${escapeAttr(set.title)} Mixcloud player">${isEs ? "Cargar reproductor de Mixcloud" : "Load Mixcloud player"}</button>
+      <p class="mixcloud-chart-label">${isEs ? "Reproductor de Mixcloud" : "Mixcloud player"}</p>
+      <p>${isEs ? "El reproductor permanece desconectado hasta que decidas cargarlo. A partir de ese momento se aplican las condiciones de privacidad y cookies de Mixcloud." : "The player stays disconnected until you choose to load it. Mixcloud’s privacy and cookie terms apply from that point."}</p>
+      <button class="button primary" type="button" data-embed-load data-src="${escapeAttr(set.embedUrl)}" data-title="${escapeAttr(set.title)} Mixcloud player">${isEs ? "Cargar reproductor" : "Load Mixcloud player"}</button>
     </div>
   </div>`;
 }
@@ -748,14 +1258,14 @@ function releasePlatformRoutes(release, lang = "en") {
   const directLinks = releaseDirectLinks(release);
   const restricted = Array.isArray(release.platformAvailability);
   const directTrack = lang === "es" ? "Enlace directo" : "Direct track link";
-  const directVideo = lang === "es" ? "Enlace directo al video" : "Direct video link";
-  const searchTitle = lang === "es" ? "Buscar por título" : "Search by title";
+  const directVideo = lang === "es" ? "Enlace directo al vídeo" : "Direct video link";
+  const searchTitle = lang === "es" ? "Búsqueda por título" : "Title search";
   const routes = [
-    { key: "spotify", href: platformAllowed(release, "spotify") ? directLinks.spotify || (!restricted ? serviceSearchUrl("spotify", title) : "") : "", meta: directLinks.spotify ? directTrack : searchTitle },
-    { key: "appleMusic", href: platformAllowed(release, "appleMusic") ? directLinks.appleMusic : "", meta: directTrack },
-    { key: "youtube", href: platformAllowed(release, "youtube") ? directLinks.youtube || (!restricted ? serviceSearchUrl("youtube", title) : "") : "", meta: directLinks.youtube ? directVideo : searchTitle },
-    { key: "deezer", href: platformAllowed(release, "deezer") ? directLinks.deezer : "", meta: directTrack },
-    { key: "amazonMusic", href: platformAllowed(release, "amazonMusic") ? directLinks.amazonMusic : "", meta: directTrack }
+    { key: "youtube", href: platformAllowed(release, "youtube") ? directLinks.youtube || (!restricted ? serviceSearchUrl("youtube", title) : "") : "", meta: directLinks.youtube ? directVideo : searchTitle, direct: Boolean(directLinks.youtube) },
+    { key: "spotify", href: platformAllowed(release, "spotify") ? directLinks.spotify || (!restricted ? serviceSearchUrl("spotify", title) : "") : "", meta: directLinks.spotify ? directTrack : searchTitle, direct: Boolean(directLinks.spotify) },
+    { key: "appleMusic", href: platformAllowed(release, "appleMusic") ? directLinks.appleMusic : "", meta: directTrack, direct: Boolean(directLinks.appleMusic) },
+    { key: "deezer", href: platformAllowed(release, "deezer") ? directLinks.deezer : "", meta: directTrack, direct: Boolean(directLinks.deezer) },
+    { key: "amazonMusic", href: platformAllowed(release, "amazonMusic") ? directLinks.amazonMusic : "", meta: directTrack, direct: Boolean(directLinks.amazonMusic) }
   ];
   return routes.filter((route) => route.href);
 }
@@ -766,28 +1276,89 @@ function isYoutubeOnlyRelease(release) {
     && release.platformAvailability[0] === "youtube";
 }
 
+function youtubeEmbedUrl(release) {
+  const id = String(release.youtubeId || "").trim();
+  return /^[A-Za-z0-9_-]{11}$/.test(id)
+    ? `https://www.youtube-nocookie.com/embed/${id}?rel=0`
+    : "";
+}
+
+function formatReleaseDate(date, lang = "en") {
+  const value = String(date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  return new Intl.DateTimeFormat(lang === "es" ? "es-ES" : "en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC"
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function releaseSummary(release, lang = "en") {
+  const isEs = lang === "es";
+  const date = formatReleaseDate(release.releaseDate, lang);
+  const type = releaseTypeLabel(release.type, lang);
+  if (isYoutubeOnlyRelease(release)) {
+    return isEs
+      ? `Un ${type} de BladesBeats, publicado${date ? ` el ${date}` : ""} en su canal oficial de YouTube.`
+      : `A ${type} from BladesBeats, published${date ? ` on ${date}` : ""} on the official YouTube channel.`;
+  }
+  return isEs
+    ? `Un ${type} de BladesBeats${date ? `, publicado el ${date}` : ""}.`
+    : `A ${type} from BladesBeats${date ? `, released on ${date}` : ""}.`;
+}
+
+function setSummary(set, lang = "en") {
+  const isEs = lang === "es";
+  const genres = Array.isArray(set.genres)
+    ? set.genres.slice(0, 3).map((genre) => String(genre).toLocaleLowerCase(isEs ? "es-ES" : "en-GB"))
+    : [];
+  if (genres.length) {
+    return isEs
+      ? `Una sesión de BladesBeats que recorre ${naturalList(genres, lang)}, disponible completa en Mixcloud.`
+      : `A BladesBeats session moving through ${naturalList(genres, lang)}, available in full on Mixcloud.`;
+  }
+  return isEs
+    ? "Una sesión DJ completa de BladesBeats, disponible en Mixcloud."
+    : "A full BladesBeats DJ set, available on Mixcloud.";
+}
+
+function youtubeEmbedPlaceholder(release, lang = "en") {
+  const embedUrl = youtubeEmbedUrl(release);
+  if (!embedUrl) return "";
+  const isEs = lang === "es";
+  const title = displayReleaseTitle(release);
+  return `<div class="embed video-embed embed-consent" data-embed-shell>
+    <div class="embed-consent-panel">
+      <p class="mixcloud-chart-label">YouTube</p>
+      <p>${isEs ? `${escapeHtml(title)} puede reproducirse aquí. YouTube permanece desconectado hasta que decidas cargar el vídeo; a partir de ese momento se aplican sus condiciones de privacidad y cookies.` : `${escapeHtml(title)} can play here. YouTube stays disconnected until you choose to load the video; its privacy and cookie terms apply from that point.`}</p>
+      <button class="button primary" type="button" data-embed-load data-src="${escapeAttr(embedUrl)}" data-title="${escapeAttr(title)} YouTube player">${isEs ? "Cargar vídeo" : "Load YouTube video"}</button>
+    </div>
+  </div>`;
+}
+
 function releaseTypeLabel(type, lang = "en") {
   const key = String(type || "single").toLowerCase();
   if (lang !== "es") return type || "single";
   const labels = {
-    single: "single",
+    single: "sencillo",
     remix: "remix",
-    edit: "edit",
+    edit: "edición",
     mashup: "mashup",
     instrumental: "instrumental",
-    video: "video"
+    video: "video",
+    "dj set": "sesión DJ"
   };
   return labels[key] || type || "single";
 }
 
-function releasePlatformPanel(release, lang = "en") {
+function releasePlatformPanel(release, lang = "en", routes = releasePlatformRoutes(release, lang)) {
   const isEs = lang === "es";
   const title = displayReleaseTitle(release);
-  const routes = releasePlatformRoutes(release, lang);
   if (!routes.length) return "";
   const heading = isYoutubeOnlyRelease(release)
-    ? (isEs ? `Ver ${title}` : `Watch ${title}`)
-    : (isEs ? `Escuchar ${title}` : `Listen to ${title}`);
+    ? (isEs ? `Vídeo oficial de ${title}` : `${title} official video`)
+    : (isEs ? `${title} en las plataformas` : `${title} across the platforms`);
   return `<section class="release-platform-panel" aria-labelledby="release-platforms-title">
     <h2 id="release-platforms-title">${escapeHtml(heading)}</h2>
     <div class="release-platform-list">
@@ -904,10 +1475,10 @@ ${entries.map((entry) => `<a class="platform-entry" href="${escapeAttr(entry.hre
 
 function platformCatalog(releases, sets, lang = "en") {
   const isEs = lang === "es";
+  const youtubeUrl = PLATFORM_LINKS.find(([name]) => name === "YouTube")?.[1] || "";
   const spotifyUrl = PLATFORM_LINKS.find(([name]) => name === "Spotify")?.[1] || "";
   const appleUrl = PLATFORM_LINKS.find(([name]) => name === "Apple Music")?.[1] || "";
   const mixcloudUrl = PLATFORM_LINKS.find(([name]) => name === "Mixcloud")?.[1] || "";
-  const youtubeUrl = PLATFORM_LINKS.find(([name]) => name === "YouTube")?.[1] || "";
   const instagramUrl = PLATFORM_LINKS.find(([name]) => name === "Instagram")?.[1] || "";
   const tiktokUrl = PLATFORM_LINKS.find(([name]) => name === "TikTok")?.[1] || "";
   const countLabel = (count, singular, plural) => `${count} ${count === 1 ? singular : plural}`;
@@ -917,42 +1488,42 @@ function platformCatalog(releases, sets, lang = "en") {
   const youtubeEntries = releasePlatformEntries(releases, "youtube", lang);
   const platforms = [
     {
-      key: "apple-music",
-      name: "Apple Music",
-      count: countLabel(appleEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
-      copy: isEs ? "Lanzamientos con enlaces directos en Apple Music." : "Releases with direct Apple Music links.",
-      profileUrl: appleUrl,
-      entries: appleEntries
+      key: "youtube",
+      name: "YouTube",
+      count: countLabel(youtubeEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
+      copy: isEs ? "Remixes, edits y sesiones desde el canal oficial de BladesBeats en YouTube." : "Remixes, edits, and sets from the official BladesBeats YouTube channel.",
+      profileUrl: youtubeUrl,
+      entries: youtubeEntries
     },
     {
       key: "spotify",
       name: "Spotify",
-      count: countLabel(spotifyEntries.length, isEs ? "entrada" : "item", isEs ? "entradas" : "items"),
-      copy: isEs ? "Abre BladesBeats en Spotify por t\u00edtulo o perfil oficial." : "Open BladesBeats on Spotify by title or official profile.",
+      count: countLabel(spotifyEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
+      copy: isEs ? "El perfil de BladesBeats en Spotify, con los lanzamientos localizables por título." : "The BladesBeats profile on Spotify, with releases searchable by title.",
       profileUrl: spotifyUrl,
       entries: spotifyEntries
+    },
+    {
+      key: "apple-music",
+      name: "Apple Music",
+      count: countLabel(appleEntries.length, isEs ? "lanzamiento" : "release", isEs ? "lanzamientos" : "releases"),
+      copy: isEs ? "Los lanzamientos de BladesBeats que también cuentan con enlace directo en Apple Music." : "BladesBeats releases that also have a direct Apple Music link.",
+      profileUrl: appleUrl,
+      entries: appleEntries
     },
     {
       key: "mixcloud",
       name: "Mixcloud",
       count: countLabel(mixcloudEntries.length, isEs ? "sesi\u00f3n" : "set", isEs ? "sesiones" : "sets"),
-      copy: isEs ? "Sesiones DJ oficiales publicadas en Mixcloud." : "Official DJ sets published on Mixcloud.",
+      copy: isEs ? "Sesiones DJ completas desde el perfil oficial de BladesBeats en Mixcloud." : "Full-length DJ sets from the official BladesBeats Mixcloud profile.",
       profileUrl: mixcloudUrl,
       entries: mixcloudEntries
-    },
-    {
-      key: "youtube",
-      name: "YouTube",
-      count: countLabel(youtubeEntries.length, isEs ? "entrada" : "item", isEs ? "entradas" : "items"),
-      copy: isEs ? "Abre BladesBeats en YouTube por t\u00edtulo o canal oficial." : "Open BladesBeats on YouTube by title or official channel.",
-      profileUrl: youtubeUrl,
-      entries: youtubeEntries
     },
     {
       key: "instagram",
       name: "Instagram",
       count: isEs ? "Perfil" : "Profile",
-      copy: isEs ? "Perfil social oficial de BladesBeats." : "Official BladesBeats social profile.",
+      copy: isEs ? "Música nueva, clips y la actividad más reciente de BladesBeats en Instagram." : "New music, clips, and current BladesBeats activity on Instagram.",
       profileUrl: instagramUrl,
       entries: profilePlatformEntries("Instagram", instagramUrl, lang)
     },
@@ -960,7 +1531,7 @@ function platformCatalog(releases, sets, lang = "en") {
       key: "tiktok",
       name: "TikTok",
       count: isEs ? "Perfil" : "Profile",
-      copy: isEs ? "Perfil social oficial de BladesBeats." : "Official BladesBeats social profile.",
+      copy: isEs ? "Clips breves de BladesBeats en el perfil oficial de TikTok." : "Short-form BladesBeats clips on the official TikTok profile.",
       profileUrl: tiktokUrl,
       entries: profilePlatformEntries("TikTok", tiktokUrl, lang)
     }
@@ -973,12 +1544,12 @@ function platformCatalog(releases, sets, lang = "en") {
     <span class="platform-count">${escapeHtml(platform.count)}</span>
   </span>
   <span class="platform-card-copy">${escapeHtml(platform.copy)}</span>
-  <span class="platform-card-action">${isEs ? "Abrir" : "Open"}</span>
+  <span class="platform-card-action">${isEs ? "Música y enlaces" : "Music and links"}</span>
 </button>`;
   }).join("\n");
   const modals = platforms.map((platform) => {
     const modalId = `platform-${platform.key}-modal`;
-    const profileLabel = isEs ? `Abrir perfil de ${platform.name}` : `Open ${platform.name} profile`;
+    const profileLabel = isEs ? `BladesBeats en ${platform.name}` : `BladesBeats on ${platform.name}`;
     return `<dialog class="appearance-modal platform-modal" id="${escapeAttr(modalId)}" aria-labelledby="${escapeAttr(modalId)}-title">
   <div class="appearance-dialog platform-dialog">
     <div class="appearance-dialog-head">
@@ -993,8 +1564,46 @@ function platformCatalog(releases, sets, lang = "en") {
 </dialog>`;
   }).join("\n");
   return `<section class="platform-catalog" aria-label="${isEs ? "Plataformas oficiales de BladesBeats" : "BladesBeats official platforms"}">
+  <div class="catalog-section-head">
+    <span>${isEs ? "Música y perfiles" : "Music and profiles"}</span>
+    <h2>${isEs ? "BladesBeats en las plataformas" : "BladesBeats across the platforms"}</h2>
+    <p>${isEs ? "El catálogo, las sesiones completas, los vídeos y las novedades de BladesBeats, reunidos en un solo lugar." : "The catalog, full DJ sets, videos, and current BladesBeats updates, gathered in one place."}</p>
+  </div>
   <div class="platform-catalog-grid">${cards}</div>
   ${modals}
+</section>`;
+}
+
+function releasePreview(releases, lang = "en") {
+  const isEs = lang === "es";
+  const latest = [...releases]
+    .sort((a, b) => String(b.releaseDate || b.lastmod || "").localeCompare(String(a.releaseDate || a.lastmod || "")))
+    .slice(0, 8);
+  const cards = latest.map((release) => {
+    const href = releaseDetailPath(release.slug, lang);
+    const title = displayReleaseTitle(release);
+    const image = release.image || "/og-card.png";
+    const date = formatReleaseDate(release.releaseDate, lang) || itemYear(release);
+    const type = releaseTypeLabel(release.type, lang);
+    const coverAlt = isEs ? `Portada de ${title}` : `${title} cover artwork`;
+    return `<article class="release-card">
+  <a class="release-card-cover" href="${escapeAttr(href)}">
+    <img src="${escapeAttr(image)}" alt="${escapeAttr(coverAlt)}" loading="lazy" decoding="async" width="600" height="600">
+  </a>
+  <div class="release-card-body">
+    <p class="release-card-meta">${escapeHtml(date)}${type ? ` &middot; ${escapeHtml(type)}` : ""}</p>
+    <h2 class="release-card-title"><a href="${escapeAttr(href)}">${escapeHtml(title)}</a></h2>
+    ${platformList(releaseDirectLinks(release))}
+  </div>
+</article>`;
+  }).join("\n");
+  return `<section class="release-preview" aria-labelledby="latest-releases-title">
+  <div class="catalog-section-head">
+    <span>${isEs ? "Catálogo reciente" : "Recent catalog"}</span>
+    <h2 id="latest-releases-title">${isEs ? "Últimos lanzamientos" : "Latest releases"}</h2>
+    <p>${isEs ? "El catálogo empieza con los temas más recientes; cada página reúne la portada, la fecha y los enlaces disponibles." : "The catalog begins with the newest tracks, with artwork, release dates, and available platform links on every page."}</p>
+  </div>
+  <div class="release-grid">${cards}</div>
 </section>`;
 }
 
@@ -1012,7 +1621,7 @@ function releaseSchema(release, detailUrl = "") {
     }
   };
   schema.url = detailUrl || `${SITE}/music/#${release.slug}`;
-  if (release.image) schema.image = release.image;
+  if (release.image) schema.image = absoluteSiteUrl(release.image);
   if (release.releaseDate) schema.datePublished = release.releaseDate;
   if (Array.isArray(release.genres) && release.genres.length) schema.genre = release.genres;
   if (links.length) schema.sameAs = links;
@@ -1044,14 +1653,31 @@ function releaseDetailSchema(release, detailUrl, description, lang = "en") {
     "breadcrumb": { "@id": `${detailUrl}#breadcrumb` },
     "mainEntity": { "@id": `${detailUrl}#recording` }
   };
-  if (release.image) webpage.primaryImageOfPage = release.image;
+  if (release.image) webpage.primaryImageOfPage = absoluteSiteUrl(release.image);
+  const graph = [webpage, breadcrumb, recording];
+  const embedUrl = youtubeEmbedUrl(release);
+  if (embedUrl && release.image && release.releaseDate) {
+    const videoId = `${detailUrl}#video`;
+    webpage.video = { "@id": videoId };
+    graph.push({
+      "@type": "VideoObject",
+      "@id": videoId,
+      "name": title,
+      "description": release.longDescription || description,
+      "thumbnailUrl": [absoluteSiteUrl(release.image)],
+      "uploadDate": `${release.releaseDate}T00:00:00Z`,
+      "embedUrl": embedUrl,
+      "url": detailUrl,
+      "isPartOf": { "@id": `${detailUrl}#webpage` }
+    });
+  }
   return {
     "@context": "https://schema.org",
-    "@graph": [webpage, breadcrumb, recording]
+    "@graph": graph
   };
 }
 
-function setSchema(set, detailUrl) {
+function setSchema(set, detailUrl, lang = "en") {
   const links = cleanLinks(set.links).map(([, url]) => url);
   const schema = {
     "@context": "https://schema.org",
@@ -1063,7 +1689,8 @@ function setSchema(set, detailUrl) {
       "@id": ARTIST_ID,
       "name": "BladesBeats"
     },
-    "url": detailUrl
+    "url": detailUrl,
+    "description": setSummary(set, lang)
   };
   if (Array.isArray(set.genres) && set.genres.length) schema.genre = set.genres;
   if (links.length) schema.sameAs = links;
@@ -1141,81 +1768,169 @@ function buildMusicIndex(releases, generatedReleaseUrls, sets) {
       "item": releaseSchema(release, generatedReleaseUrls.get(release.slug) || "")
     }))
   };
+  const youtubeUrl = PLATFORM_LINKS.find(([name]) => name === "YouTube")?.[1] || "";
   const spotifyUrl = PLATFORM_LINKS.find(([name]) => name === "Spotify")?.[1] || "";
-  const appleUrl = PLATFORM_LINKS.find(([name]) => name === "Apple Music")?.[1] || "";
   return basePage({
-    title: "Music | BladesBeats",
-    description: "Official BladesBeats releases, tracks, remixes, and music platform links.",
+    title: "Music and remixes | BladesBeats",
+    description: "BladesBeats singles, remixes, instrumentals, and DJ sets, with videos on YouTube and listening links across the major music platforms.",
     canonical: `${SITE}/music/`,
     label: "Music",
     h1: "Music",
-    intro: "Official releases, collaborations, and remixes. Available through the verified music and social platforms.",
+    intro: "Original releases, remixes, instrumentals, and DJ sets, gathered with verified links to the platforms where they live.",
     activeNav: "music",
     alternates: PAGE_ALTERNATES.music,
     jsonLd: itemList,
     body: `<div class="platform-actions">
-  <a class="button primary" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">Spotify</a>
-  <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">Apple Music</a>
-  <a class="button" href="/dj-sets/">DJ sets</a>
+  <a class="button primary" href="${escapeAttr(youtubeUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats on YouTube</a>
+  <a class="button" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats on Spotify</a>
+  <a class="button" href="/dj-sets/">DJ set archive</a>
 </div>
+${releasePreview(releases, "en")}
 ${platformCatalog(releases, sets, "en")}`
   });
 }
 
-function buildReleasePage(release, lang = "en") {
+function releaseNeighborNav(release, releases, lang = "en") {
+  const isEs = lang === "es";
+  const ordered = [...releases].sort((a, b) => (
+    String(b.releaseDate || b.lastmod || "").localeCompare(String(a.releaseDate || a.lastmod || ""))
+      || displayReleaseTitle(a).localeCompare(displayReleaseTitle(b))
+  ));
+  const index = ordered.findIndex((item) => item.slug === release.slug);
+  const newer = index > 0 ? ordered[index - 1] : null;
+  const older = index >= 0 && index < ordered.length - 1 ? ordered[index + 1] : null;
+  const neighbor = (item, direction) => {
+    if (!item) return `<span class="release-neighbor-space" aria-hidden="true"></span>`;
+    const isNewer = direction === "newer";
+    const label = isNewer
+      ? (isEs ? "Lanzamiento más reciente" : "Newer release")
+      : (isEs ? "Lanzamiento anterior" : "Older release");
+    return `<a class="release-neighbor ${isNewer ? "previous" : "next"}" href="${escapeAttr(releaseDetailPath(item.slug, lang))}">
+      <span>${isNewer ? "&larr; " : ""}${label}${isNewer ? "" : " &rarr;"}</span>
+      <strong>${escapeHtml(displayReleaseTitle(item))}</strong>
+    </a>`;
+  };
+  return `<nav class="release-neighbors" aria-label="${isEs ? "Navegación de lanzamientos" : "Release navigation"}">
+    <div class="release-neighbors-inner">
+      ${neighbor(newer, "newer")}
+      <a class="release-catalog-link" href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Todo el catálogo" : "Full catalog"}</a>
+      ${neighbor(older, "older")}
+    </div>
+  </nav>`;
+}
+
+function buildReleasePage(release, lang = "en", releases = [release]) {
   const isEs = lang === "es";
   const detailUrl = releaseDetailUrl(release.slug, lang);
   const title = displayReleaseTitle(release);
   const year = itemYear(release);
-  const verb = isYoutubeOnlyRelease(release)
-    ? (isEs ? "Ver" : "Watch")
-    : (isEs ? "Escuchar" : "Listen to");
-  const description = isEs
-    ? `${verb} ${title} de BladesBeats. Página oficial con enlaces verificados${year ? ` para este lanzamiento de ${year}` : ""}.`.slice(0, 155)
-    : `${verb} ${title} by BladesBeats. Official release page with verified platform links${year ? ` for this ${year} release` : ""}.`.slice(0, 155);
+  const routes = releasePlatformRoutes(release, lang);
+  const formatLabel = releaseTypeLabel(release.type, lang);
+  const factFormatLabel = formatLabel
+    ? `${formatLabel.charAt(0).toLocaleUpperCase(isEs ? "es-ES" : "en-GB")}${formatLabel.slice(1)}`
+    : formatLabel;
+  const publishedDate = formatReleaseDate(release.releaseDate, lang) || year;
+  const description = compactMetaDescription(isEs
+    ? `${title} de BladesBeats: ${formatLabel}${publishedDate ? ` publicado el ${publishedDate}` : ""}, con enlaces oficiales verificados y datos del lanzamiento.`
+    : `${title} by BladesBeats — ${formatLabel}${publishedDate ? ` released ${publishedDate}` : ""}, with verified official links and release details.`);
   const image = release.image || `${SITE}/og-card.png`;
-  const releaseCopy = isEs
-    ? `${title} es una página oficial de BladesBeats con enlaces verificados.`
-    : (release.longDescription || release.description || `${title} is an official BladesBeats release.`);
+  const socialDimensions = socialImageDimensions(image, { width: 1200, height: 1200 });
+  const heroCopy = releaseSummary(release, lang);
+  const coverAlt = isEs ? `Portada de ${title}` : `${title} cover artwork`;
+  const releaseFacts = [
+    [isEs ? "Publicado" : "Released", publishedDate],
+    [isEs ? "Formato" : "Format", factFormatLabel],
+    [isEs ? "Artista" : "Artist", release.artist || "BladesBeats"]
+  ].filter(([, value]) => value);
   const platformCopy = isYoutubeOnlyRelease(release)
-    ? (isEs ? `Ver ${escapeHtml(title)} en el enlace verificado de YouTube.` : `Watch ${escapeHtml(title)} on the verified YouTube link below.`)
-    : (isEs ? `Enlaces verificados para ${escapeHtml(title)}.` : `Verified platform links for ${escapeHtml(title)} are collected below.`);
-  const body = `<nav class="breadcrumb" aria-label="Breadcrumb">
-  <ol>
-    <li><a href="/">BladesBeats</a></li>
-    <li><a href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Música" : "Music"}</a></li>
-    <li aria-current="page">${escapeHtml(title)}</li>
-  </ol>
-</nav>
-<article class="release-detail">
-  <div class="release-detail-cover">
-    <img src="${escapeAttr(image)}" alt="${escapeAttr(title)} cover artwork" width="800" height="800" loading="eager" decoding="async">
+    ? (isEs ? "El enlace verificado de YouTube lleva a la publicación oficial." : "The verified YouTube link leads to the official upload.")
+    : routes.length
+      ? (isEs ? "El vídeo y las opciones de escucha están reunidos aquí, con enlaces directos cuando están disponibles y búsquedas por título cuando hace falta." : "Video and listening options are gathered here, with direct links where available and title searches where needed.")
+      : (isEs ? "La portada, la fecha y el formato forman parte del archivo de este lanzamiento." : "The artwork, date, and format are collected here as part of the release archive.");
+  const releaseCopy = isEs
+    ? platformCopy
+    : (release.longDescription || platformCopy);
+  const primaryRoute = routes.find((route) => route.key === "youtube" && route.direct)
+    || routes.find((route) => route.key === "spotify" && route.direct)
+    || routes.find((route) => route.key === "youtube")
+    || routes.find((route) => route.key === "spotify")
+    || routes.find((route) => route.key === "appleMusic")
+    || routes[0]
+    || null;
+  const primaryLabel = primaryRoute?.key === "youtube"
+    ? (primaryRoute.direct ? (isEs ? "Vídeo en" : "Video on") : (isEs ? "Buscar en" : "Find on"))
+    : (isEs ? "Escuchar en" : "Listen on");
+  const sortedReleases = [...releases].sort((a, b) => (
+    String(b.releaseDate || b.lastmod || "").localeCompare(String(a.releaseDate || a.lastmod || ""))
+      || displayReleaseTitle(a).localeCompare(displayReleaseTitle(b))
+  ));
+  const posterIndex = Math.max(0, sortedReleases.findIndex((item) => item.slug === release.slug)) + 1;
+  const body = `<article class="release-poster">
+  <img class="release-poster-backdrop" src="${escapeAttr(image)}" alt="" aria-hidden="true" width="800" height="800" decoding="async">
+  <div class="release-poster-inner">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="${isEs ? "/es/" : "/"}">BladesBeats</a></li>
+        <li><a href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Música" : "Music"}</a></li>
+        <li aria-current="page">${escapeHtml(title)}</li>
+      </ol>
+    </nav>
+    <div class="release-poster-grid">
+      <div class="release-poster-art">
+        <span class="release-poster-number">BB / ${String(posterIndex).padStart(2, "0")}</span>
+        <img src="${escapeAttr(image)}"${responsiveImageAttributes(image, "(max-width: 720px) calc(100vw - 64px), (max-width: 1200px) 38vw, 560px")} alt="${escapeAttr(coverAlt)}" width="800" height="800" loading="eager" decoding="async" fetchpriority="high">
+      </div>
+      <div class="release-poster-copy">
+        <p class="release-poster-eyebrow">${escapeHtml(year || (isEs ? "Lanzamiento" : "Release"))} &middot; ${escapeHtml(releaseTypeLabel(release.type, lang))}</p>
+        <h1 class="release-poster-title">${escapeHtml(title)}</h1>
+        <p class="release-poster-date">${escapeHtml(publishedDate)}</p>
+        <p class="release-poster-lead">${escapeHtml(heroCopy)}</p>
+        <div class="release-poster-actions">
+          <a class="release-poster-primary" href="${escapeAttr(primaryRoute?.href || (isEs ? "/es/musica/" : "/music/"))}"${primaryRoute ? ' target="_blank" rel="noopener noreferrer"' : ""}>
+            <span>${primaryLabel}</span>
+            <strong>${escapeHtml(primaryRoute ? labelForLink(primaryRoute.key) : (isEs ? "Todo el catálogo" : "Full catalog"))} &nearr;</strong>
+          </a>
+          ${routes.length ? `<div class="release-poster-services" aria-label="${isEs ? "Plataformas" : "Platforms"}">
+            ${routes.map((route) => `<a href="${escapeAttr(route.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(labelForLink(route.key))}</a>`).join("\n            ")}
+          </div>` : ""}
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="release-detail-body">
-    <p class="page-eyebrow">${escapeHtml(year || (isEs ? "Lanzamiento" : "Release"))} &middot; ${escapeHtml(releaseTypeLabel(release.type, lang))}</p>
-    <p class="release-detail-text">${escapeHtml(releaseCopy)}</p>
-    <p class="release-detail-text">${platformCopy}</p>
-    ${Array.isArray(release.featuredArtists) && release.featuredArtists.length ? `<p class="release-detail-meta"><span>${isEs ? "Con" : "With"}</span> ${escapeHtml(release.featuredArtists.join(", "))}</p>` : ""}
-    ${releasePlatformPanel(release, lang)}
-    <p><a class="back-link" href="${isEs ? "/es/musica/" : "/music/"}">&larr; ${isEs ? "Volver a música" : "Back to releases"}</a></p>
+</article>
+<section class="release-editorial" aria-labelledby="release-editorial-title">
+  <div class="release-editorial-inner">
+    <div>
+      <p class="release-editorial-kicker">${isEs ? "Detalles del lanzamiento" : "Release details"}</p>
+      <h2 id="release-editorial-title">${isYoutubeOnlyRelease(release) ? (isEs ? "Dónde verlo" : "Where to watch") : (isEs ? "Dónde escucharlo" : "Where to listen")}</h2>
+      <p class="release-editorial-copy">${escapeHtml(releaseCopy)}</p>
+      ${Array.isArray(release.featuredArtists) && release.featuredArtists.length ? `<p class="release-editorial-meta"><span>${isEs ? "Con" : "With"}</span> ${escapeHtml(release.featuredArtists.join(", "))}</p>` : ""}
+    </div>
+    <dl class="gig-facts">
+      ${releaseFacts.map(([factLabel, factValue]) => `<div><dt>${escapeHtml(factLabel)}</dt><dd>${escapeHtml(factValue)}</dd></div>`).join("\n      ")}
+    </dl>
+    ${youtubeEmbedUrl(release) ? `<div class="release-editorial-media">${youtubeEmbedPlaceholder(release, lang)}</div>` : ""}
   </div>
-</article>`;
+</section>
+${releaseNeighborNav(release, releases, lang)}`;
   return basePage({
-    title: isEs ? `${escapeHtml(title)} | Lanzamiento oficial de BladesBeats` : `${escapeHtml(title)} | Official BladesBeats Release`,
+    title: compactReleasePageTitle(title),
     description,
     canonical: detailUrl,
     label: isEs ? "Lanzamiento" : "Release",
     h1: title,
-    intro: isEs ? `${verb} ${title} de BladesBeats.` : `${verb} ${title} by BladesBeats.`,
+    intro: isEs ? `${title}, un ${formatLabel} de BladesBeats.` : `${title}, a ${formatLabel} from BladesBeats.`,
     activeNav: "music",
     lang,
     alternates: { en: releaseDetailUrl(release.slug, "en"), es: releaseDetailUrl(release.slug, "es") },
     jsonLd: releaseDetailSchema(release, detailUrl, description, lang),
     body,
     socialImage: image,
-    socialImageWidth: 1200,
-    socialImageHeight: 1200,
-    socialImageAlt: `${title} cover artwork`
+    socialImageWidth: socialDimensions.width,
+    socialImageHeight: socialDimensions.height,
+    socialImageAlt: coverAlt,
+    bodyClass: "release-page",
+    showPageHead: false
   });
 }
 
@@ -1228,14 +1943,14 @@ function buildSetIndex(sets, generatedSetUrls, lang = "en") {
     "itemListElement": sets.map((set, index) => ({
       "@type": "ListItem",
       "position": index + 1,
-      "item": setSchema(set, generatedSetUrls.get(set.slug) || (isEs ? `${SITE}/es/sesiones/` : `${SITE}/dj-sets/`))
+      "item": setSchema(set, generatedSetUrls.get(set.slug) || (isEs ? `${SITE}/es/sesiones/` : `${SITE}/dj-sets/`), lang)
     }))
   };
   const cards = sets.map((set) => {
     const detailUrl = generatedSetUrls.get(set.slug);
     const href = detailUrl ? setDetailPath(set.slug, lang) : set.links?.mixcloud || (isEs ? "/es/sesiones/" : "/dj-sets/");
     const image = set.image || "/og-card.png";
-    const cardCopy = isEs ? "Sesión oficial de BladesBeats publicada en Mixcloud." : set.description;
+    const cardCopy = setSummary(set, lang);
     const coverAlt = isEs ? `${set.title} imagen de portada en Mixcloud` : `${set.title} Mixcloud cover image`;
     return `<article class="release-card">
   <a class="release-card-cover" href="${escapeAttr(href)}">
@@ -1251,18 +1966,20 @@ function buildSetIndex(sets, generatedSetUrls, lang = "en") {
   }).join("\n");
   return basePage({
     title: isEs ? "Sesiones DJ | BladesBeats" : "DJ Sets | BladesBeats",
-    description: isEs ? "Sesiones DJ oficiales de BladesBeats en Mixcloud." : "Official BladesBeats DJ sets and Mixcloud sessions.",
+    description: isEs
+      ? "Sesiones DJ completas de BladesBeats en Mixcloud, con duración, estilos, rankings disponibles y enlaces verificados."
+      : "Full-length BladesBeats DJ sets on Mixcloud, with durations, styles, available chart history, and verified links.",
     canonical: isEs ? PAGE_ALTERNATES.sets.es : PAGE_ALTERNATES.sets.en,
     label: isEs ? "Sesiones" : "DJ Sets",
     h1: isEs ? "Sesiones DJ" : "DJ Sets",
-    intro: isEs ? "Sesiones oficiales de BladesBeats publicadas en Mixcloud." : "Official BladesBeats DJ sets and Mixcloud sessions.",
+    intro: isEs ? "Sesiones completas de BladesBeats, con enlaces de Mixcloud e historial de rankings cuando está disponible." : "Full-length sessions from BladesBeats, with Mixcloud links and chart history where available.",
     activeNav: "sets",
     lang,
     alternates: PAGE_ALTERNATES.sets,
     jsonLd: itemList,
     body: `<div class="platform-actions">
-  <a class="button primary" href="https://www.mixcloud.com/BladesBeats/" target="_blank" rel="noopener noreferrer">Mixcloud</a>
-  <a class="button" href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Música" : "Music releases"}</a>
+  <a class="button primary" href="https://www.mixcloud.com/BladesBeats/" target="_blank" rel="noopener noreferrer">${isEs ? "BladesBeats en Mixcloud" : "BladesBeats on Mixcloud"}</a>
+  <a class="button" href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Catálogo musical" : "Music catalog"}</a>
 </div>
 <section class="release-grid">${cards}</section>`
   });
@@ -1271,10 +1988,11 @@ function buildSetIndex(sets, generatedSetUrls, lang = "en") {
 function buildSetPage(set, lang = "en") {
   const isEs = lang === "es";
   const detailUrl = setDetailUrl(set.slug, lang);
-  const description = isEs
-    ? `${set.title} es una sesión DJ oficial de BladesBeats en ${set.platform || "Mixcloud"}.`.slice(0, 155)
-    : `${set.title} is an official BladesBeats DJ set on ${set.platform || "Mixcloud"}.`.slice(0, 155);
+  const description = compactMetaDescription(isEs
+    ? `${set.title}, una sesión DJ de BladesBeats disponible completa en ${set.platform || "Mixcloud"}, con duración, estilos y datos verificados.`
+    : `${set.title}, a full-length BladesBeats DJ set on ${set.platform || "Mixcloud"}, with duration, styles, and verified details.`);
   const image = set.image || `${SITE}/og-card.png`;
+  const coverAlt = isEs ? `Portada de ${set.title} en Mixcloud` : `${set.title} Mixcloud cover artwork`;
   const chartHistory = renderMixcloudChartHistory(set, lang);
   const embed = mixcloudEmbedPlaceholder(set, lang);
   const body = `<nav class="breadcrumb" aria-label="Breadcrumb">
@@ -1286,28 +2004,28 @@ function buildSetPage(set, lang = "en") {
 </nav>
 <article class="release-detail">
   <div class="release-detail-cover">
-    <img src="${escapeAttr(image)}" alt="${escapeAttr(set.title)} cover image" width="800" height="800" loading="eager" decoding="async">
+    <img src="${escapeAttr(image)}" alt="${escapeAttr(coverAlt)}" width="800" height="800" loading="eager" decoding="async" fetchpriority="high">
   </div>
   <div class="release-detail-body">
     <p class="page-eyebrow">${escapeHtml(set.uploadDate || set.publishedDate || "Mixcloud")} &middot; ${escapeHtml(set.duration || (isEs ? "Sesión DJ" : "DJ set"))}</p>
-    <p class="release-detail-text">${escapeHtml(isEs ? "Sesión oficial de BladesBeats publicada en Mixcloud." : (set.longDescription || set.description))}</p>
+    <p class="release-detail-text">${escapeHtml(isEs ? setSummary(set, lang) : (set.longDescription || setSummary(set, lang)))}</p>
     ${chartHistory}
     ${embed}
     <div class="release-detail-platforms">${detailPlatformLinks(set.links)}</div>
-    <p><a class="back-link" href="${isEs ? "/es/sesiones/" : "/dj-sets/"}">&larr; ${isEs ? "Volver a sesiones" : "Back to DJ sets"}</a></p>
+    <p><a class="back-link" href="${isEs ? "/es/sesiones/" : "/dj-sets/"}">&larr; ${isEs ? "Archivo de sesiones DJ" : "DJ set archive"}</a></p>
   </div>
 </article>`;
   return basePage({
-    title: isEs ? `${escapeHtml(set.title)} | Sesión DJ de BladesBeats` : `${escapeHtml(set.title)} | BladesBeats DJ Set`,
+    title: compactReleasePageTitle(`${set.title} — ${isEs ? "sesión DJ" : "DJ set"}`),
     description,
     canonical: detailUrl,
     label: isEs ? "Sesión DJ" : "DJ Set",
     h1: set.title,
-    intro: isEs ? "Página oficial de sesión DJ de BladesBeats." : "Official BladesBeats DJ set page.",
+    intro: isEs ? "Una sesión completa de BladesBeats en Mixcloud, con sus datos y rankings disponibles." : "A full-length BladesBeats session on Mixcloud, with available details and chart history.",
     activeNav: "sets",
     lang,
     alternates: { en: setDetailUrl(set.slug, "en"), es: setDetailUrl(set.slug, "es") },
-    jsonLd: setSchema(set, detailUrl),
+    jsonLd: setSchema(set, detailUrl, lang),
     body
   });
 }
@@ -1333,8 +2051,7 @@ function staticContactScript() {
 (function(){
   const CONTACT_EMAIL = "bladesbeats.opossum156@passinbox.com";
   const CONTACT_ENDPOINT = "/api/contact";
-  let contactIpDetected = "";
-  let contactIpRequested = false;
+  const FORM_LANGUAGE = document.documentElement.lang === "es" ? "es" : "en";
 
   function contactType(form){
     const select = form.querySelector("[data-contact-type]");
@@ -1384,31 +2101,12 @@ function staticContactScript() {
     status.classList.toggle("success", kind === "success");
   }
 
-  function detectContactIp(form){
-    const ipEl = form.querySelector("[data-contact-ip]");
-    if(contactIpDetected){
-      if(ipEl) ipEl.textContent = contactIpDetected;
-      return;
-    }
-    if(contactIpRequested) return;
-    contactIpRequested = true;
-    fetch("https://api.ipify.org?format=json")
-      .then(function(response){ return response.ok ? response.json() : false; })
-      .then(function(data){
-        if(data && data.ip){
-          contactIpDetected = data.ip;
-          if(ipEl) ipEl.textContent = contactIpDetected;
-        }
-      })
-      .catch(function(){ if(ipEl) ipEl.textContent = "not detected"; });
-  }
-
   function renderTurnstile(tries){
     const el = document.getElementById("bb-turnstile");
     if(!el || el.dataset.rendered) return;
     if(location.hostname === "127.0.0.1" || location.hostname === "localhost"){
       el.dataset.rendered = "local";
-      el.textContent = "Verification runs on bladesbeats.com.";
+      el.textContent = FORM_LANGUAGE === "es" ? "La verificación de seguridad se activa en bladesbeats.com." : "Security verification runs on bladesbeats.com.";
       return;
     }
     if(window.turnstile && typeof window.turnstile.render === "function"){
@@ -1416,6 +2114,7 @@ function staticContactScript() {
         const widgetId = window.turnstile.render(el, {
           sitekey: "0x4AAAAAADoNSCaiKxbVJ44j",
           theme: "dark",
+          language: FORM_LANGUAGE,
           callback: function(token){ el.dataset.token = token || ""; },
           "expired-callback": function(){ delete el.dataset.token; },
           "error-callback": function(){ delete el.dataset.token; },
@@ -1510,7 +2209,6 @@ function staticContactScript() {
       const field = form.elements[key];
       lines.push(fieldLabel(field) + ": " + value);
     });
-    if(contactIpDetected) lines.push((form.dataset.ipLabel || "IP") + ": " + contactIpDetected);
     const subject = "BladesBeats — " + typeLabel;
     const mail = "mailto:" + CONTACT_EMAIL + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(lines.join("\\n"));
     const canSendDirect = needsCaptcha && CONTACT_ENDPOINT;
@@ -1528,8 +2226,7 @@ function staticContactScript() {
             subject,
             type: typeLabel,
             fields: lines,
-            page: location.href,
-            ip: contactIpDetected || ""
+            page: location.href
           })
         });
         const result = await response.json().catch(function(){ return {}; });
@@ -1574,7 +2271,6 @@ function staticContactScript() {
     });
     form.addEventListener("submit", submitContactForm);
     updateContactGroups(form);
-    detectContactIp(form);
     renderTurnstile();
   });
 }());`;
@@ -1584,10 +2280,10 @@ function contactBody(lang) {
   const isEs = lang === "es";
   return `<div class="booking-layout">
   <div class="booking-main">
-    <h2>${isEs ? "Mensajes por Instagram." : "Messages through Instagram."}</h2>
+    <h2>${isEs ? "También estoy en Instagram." : "Instagram is always open."}</h2>
     <p>${isEs
-      ? "Instagram es la vía directa para consultas de contratación DJ, bolos, remixes, colaboraciones y mensajes directos."
-      : "Instagram is the direct route for DJ booking inquiries, remixes, collaborations, and direct messages."}</p>
+      ? "Los mensajes sobre contratación, bolos, remixes y colaboraciones también son bienvenidos por Instagram."
+      : "Messages about bookings, gigs, remixes, and collaborations are also welcome on Instagram."}</p>
   </div>
   <aside class="booking-side">
     <div class="contact-stack">
@@ -1603,8 +2299,8 @@ function contactBody(lang) {
 function contactBodyDesign(lang) {
   const isEs = lang === "es";
   const t = isEs ? {
-    title: "Contacto para bolos.",
-    detail: "BladesBeats está basado en Sevilla y puede responder a consultas de contratación DJ, colaboraciones musicales y contacto directo en inglés o español.",
+    title: "Unos datos que ayudan",
+    detail: "En consultas sobre eventos, la fecha, la ciudad, la sala, la duración del set y el presupuesto ayudan a preparar una respuesta útil. Si todavía faltan detalles, no pasa nada.",
     languages: "Idiomas",
     base: "Base",
     baseValue: "Sevilla, España",
@@ -1612,16 +2308,16 @@ function contactBodyDesign(lang) {
     namePh: "Tu nombre",
     email: "Email",
     date: "Fecha del evento",
-    type: "Tipo",
+    type: "Motivo de contacto",
     message: "Mensaje",
-    messagePh: "Cuéntame sobre tu evento, fecha y ciudad...",
+    messagePh: "Un poco de contexto sobre tu evento o idea",
     send: "Enviar mensaje",
     sending: "Enviando...",
-    success: "Mensaje enviado. Te responderé pronto.",
-    mailto: "Abriendo tu app de correo con todo rellenado — solo dale a enviar.",
-    error: "Algo salió mal. Inténtalo de nuevo o escríbeme por Instagram.",
-    captcha: "Por favor completa la verificación antes de enviar.",
-    booking: "Bolo DJ",
+    success: "Gracias. Tu mensaje está en camino y responderé en cuanto pueda.",
+    mailto: "Se abrirá tu aplicación de correo con el mensaje preparado para que puedas revisarlo antes de enviarlo.",
+    error: "El mensaje no ha podido enviarse. Puedes volver a intentarlo o escribirme por Instagram.",
+    captcha: "Hace falta una verificación rápida antes de enviar el mensaje.",
+    booking: "Contratación DJ",
     mixing: "Mezcla y mastering",
     courses: "Formación DJ",
     collab: "Colaboración",
@@ -1629,26 +2325,26 @@ function contactBodyDesign(lang) {
     gdpr: "Solicitud RGPD",
     other: "Otro",
     city: "Ciudad / sala",
-    cityPh: "¿Dónde es el evento?",
+    cityPh: "Ciudad y sala, si está confirmada",
     eventType: "Tipo de evento",
     eventTypes: ["Noche de club", "Festival", "Evento privado", "Evento de empresa / marca", "Bar / lounge", "Otro"],
     setLength: "Duración del set",
-    setLengthPh: "p.ej. 2 horas",
+    setLengthPh: "Por ejemplo, 2 horas",
     startTime: "Hora de inicio",
     audience: "Público estimado",
-    audiencePh: "p.ej. 300",
+    audiencePh: "Por ejemplo, 300",
     budget: "Presupuesto (opcional)",
-    budgetPh: "Tu rango de presupuesto",
+    budgetPh: "Rango aproximado",
     artist: "Tu nombre de artista / proyecto",
     artistPh: "Cómo publicas tu música",
     mmLabel: "Baster Beats / Sevilla",
-    mmNote: "Para mezcla, mastering o ingeniería de estudio, contacta con Baster Beats en Sevilla.",
-    mmLink: "Ir a basterbeats.com",
+    mmNote: "Baster Beats en Sevilla se ocupa de mezcla, mastering e ingeniería de estudio.",
+    mmLink: "Web de Baster Beats",
     dcLabel: "Impulsa Music Center / Sevilla",
-    dcNote: "Para formación DJ, contacta con Impulsa Music Center en Sevilla.",
-    dcLink: "Ir a impulsamusiccenter.es",
-    mmMessagePh: "Para trabajo de estudio, el botón de Baster Beats es la vía principal. Añade una nota solo si también involucra a BladesBeats.",
-    dcMessagePh: "Para clases DJ, el botón de Impulsa es la vía principal. Añade una nota solo si también involucra a BladesBeats.",
+    dcNote: "Impulsa Music Center en Sevilla se ocupa de la formación DJ.",
+    dcLink: "Web de Impulsa Music Center",
+    mmMessagePh: "Baster Beats es el contacto adecuado para trabajo de estudio. Este espacio es útil si BladesBeats también participa.",
+    dcMessagePh: "Impulsa es el contacto adecuado para formación DJ. Este espacio es útil si BladesBeats también participa.",
     prodService: "¿Qué necesitas?",
     prodServices: ["Servicios de estudio con Baster Beats", "Co-producción", "Idea de remix para BladesBeats", "Consulta / dirección de producción", "Otro"],
     prodStage: "Estado del proyecto",
@@ -1658,7 +2354,7 @@ function contactBodyDesign(lang) {
     link: "Enlace a tu música",
     linkPh: "Spotify, Mixcloud, YouTube, etc.",
     genre: "Género / vibe",
-    genrePh: "¿Qué sonido tienes en mente?",
+    genrePh: "El sonido o la dirección que tienes en mente",
     remixTrack: "Tema que quieres remezclar",
     remixTrackPh: "Título del tema",
     remixArtist: "Artista original",
@@ -1666,9 +2362,9 @@ function contactBodyDesign(lang) {
     remixStyle: "Tu estilo de remix",
     remixStylePh: "p.ej. afro house, tech house",
     deadline: "Fecha objetivo (opcional)",
-    prodMessagePh: "Cuéntame qué necesitas, qué existe ya y hacia dónde quieres llevar el tema.",
-    collabMessagePh: "Cuéntame la idea, quién participa y qué tipo de colaboración tienes en mente.",
-    remixMessagePh: "Cuéntame qué quieres remezclar, qué permisos/stems existen y la dirección que buscas.",
+    prodMessagePh: "Un poco sobre lo que necesitas, lo que ya existe y hacia dónde te gustaría llevar el tema.",
+    collabMessagePh: "Un poco sobre la idea, quién participa y el tipo de colaboración que tienes en mente.",
+    remixMessagePh: "Un poco sobre el tema, los permisos o stems disponibles y la dirección que buscas.",
     dmcaNote: "Retirada por derechos de autor. Se requieren datos identificables, presentados bajo pena de perjurio — las reclamaciones falsas pueden tener consecuencias legales.",
     legalName: "Nombre legal completo",
     legalNamePh: "Tu nombre legal completo",
@@ -1689,13 +2385,15 @@ function contactBodyDesign(lang) {
     gdprDetails: "Detalles de tu solicitud",
     gdprDetailsPh: "Describe lo que solicitas",
     gdprConfirm: "Confirmo que la información anterior es exacta y se refiere a mí, o a alguien a quien estoy autorizado a representar.",
-    ip: "Tu dirección IP",
-    ipLoading: "detectando...",
-    ipNote: "Se incluye únicamente en el correo que envías, como medida de seguridad para identificar al remitente — no se almacena en ningún otro lugar.",
-    ipPrivacy: "Leer la política de privacidad"
+    privacyTitle: "Privacidad, en breve",
+    privacyPurpose: "Responsable: la persona física que utiliza el nombre artístico BladesBeats, con base en Sevilla. Los campos obligatorios se utilizan para responder a tu solicitud y, si procede, preparar una posible contratación.",
+    privacyBasis: "Base jurídica: tu solicitud, las medidas precontractuales que pidas y el interés legítimo en proteger el formulario. Hetzner, Cloudflare, Resend y el proveedor del buzón ayudan a alojar, proteger y entregar el mensaje; algunos tratamientos pueden realizarse fuera del EEE con garantías contractuales.",
+    privacyRights: "Puedes ejercer tus derechos de protección de datos a través del contacto de privacidad. No recibirás marketing por enviar este formulario.",
+    securityNote: "Cloudflare Turnstile verifica el envío y puede tratar datos técnicos de seguridad.",
+    privacyLink: "Información completa y contacto de privacidad"
   } : {
-    title: "Book BladesBeats.",
-    detail: "BladesBeats is based in Sevilla and can respond to DJ booking inquiries, music collaborations, and direct artist contact in English or Spanish.",
+    title: "A few helpful details",
+    detail: "For event inquiries, the date, city, venue, set length, and budget help me give you a useful answer. If some details are still taking shape, that’s completely fine.",
     languages: "Languages",
     base: "Base",
     baseValue: "Sevilla, Spain",
@@ -1703,15 +2401,15 @@ function contactBodyDesign(lang) {
     namePh: "Your name",
     email: "Email",
     date: "Event date",
-    type: "Type",
+    type: "What brings you here?",
     message: "Message",
-    messagePh: "Tell me about your event, date, and city...",
+    messagePh: "A little context about your event or idea",
     send: "Send message",
     sending: "Sending...",
-    success: "Message sent. I will get back to you.",
-    mailto: "Opening your email app with everything pre-filled — just press send.",
-    error: "Something went wrong. Please try again, or reach me on Instagram.",
-    captcha: "Please complete the verification below before sending.",
+    success: "Thanks—your message is on its way. I’ll reply as soon as I can.",
+    mailto: "Your email app will open with the message ready, so you can review it before sending.",
+    error: "That message did not go through. You’re welcome to try again or reach me on Instagram.",
+    captcha: "A quick verification is needed before the message can be sent.",
     booking: "DJ booking",
     mixing: "Mixing & mastering",
     courses: "DJ lessons",
@@ -1720,26 +2418,26 @@ function contactBodyDesign(lang) {
     gdpr: "GDPR request",
     other: "Other",
     city: "City / venue",
-    cityPh: "Where is the event?",
+    cityPh: "City and venue, if confirmed",
     eventType: "Event type",
     eventTypes: ["Club night", "Festival", "Private event", "Corporate / brand event", "Bar / lounge", "Other"],
     setLength: "Set length",
-    setLengthPh: "e.g. 2 hours",
+    setLengthPh: "For example, 2 hours",
     startTime: "Start time",
     audience: "Expected audience",
-    audiencePh: "e.g. 300",
+    audiencePh: "For example, 300",
     budget: "Budget (optional)",
-    budgetPh: "Your budget range",
+    budgetPh: "Approximate range",
     artist: "Your artist / project name",
     artistPh: "How you release music",
     mmLabel: "Baster Beats / Sevilla",
-    mmNote: "For mixing, mastering, or studio engineering, contact Baster Beats in Sevilla.",
-    mmLink: "Go to basterbeats.com",
+    mmNote: "Baster Beats in Sevilla handles mixing, mastering, and studio engineering.",
+    mmLink: "Baster Beats website",
     dcLabel: "Impulsa Music Center / Sevilla",
-    dcNote: "For DJ lessons in Sevilla, contact Impulsa Music Center.",
-    dcLink: "Go to impulsamusiccenter.es",
-    mmMessagePh: "For studio work, the Baster Beats button is the main route. Add a note only if it still involves BladesBeats.",
-    dcMessagePh: "For DJ lessons, the Impulsa button is the main route. Add a note only if it still involves BladesBeats.",
+    dcNote: "Impulsa Music Center in Sevilla handles DJ lessons.",
+    dcLink: "Impulsa Music Center website",
+    mmMessagePh: "Baster Beats is the right contact for studio work. This space is useful when BladesBeats is also involved.",
+    dcMessagePh: "Impulsa is the right contact for DJ lessons. This space is useful when BladesBeats is also involved.",
     prodService: "What do you need?",
     prodServices: ["Studio services with Baster Beats", "Production collaboration with BladesBeats", "Remix idea for BladesBeats", "Production question / direction", "Other"],
     prodStage: "Project stage",
@@ -1749,7 +2447,7 @@ function contactBodyDesign(lang) {
     link: "Link to your music",
     linkPh: "Spotify, Mixcloud, YouTube, etc.",
     genre: "Genre / vibe",
-    genrePh: "What sound do you have in mind?",
+    genrePh: "The sound or direction you have in mind",
     remixTrack: "Track you want to remix",
     remixTrackPh: "Title of the track",
     remixArtist: "Original artist",
@@ -1757,9 +2455,9 @@ function contactBodyDesign(lang) {
     remixStyle: "Your remix style",
     remixStylePh: "e.g. afro house, tech house",
     deadline: "Target date (optional)",
-    prodMessagePh: "Tell me what you need, what already exists, and where you want the track to go.",
-    collabMessagePh: "Tell me the idea, who is involved, and what kind of collaboration you have in mind.",
-    remixMessagePh: "Tell me what you want remixed, what permissions/stems exist, and the direction you want.",
+    prodMessagePh: "A little about what you need, what already exists, and where you hope to take the track.",
+    collabMessagePh: "A little about the idea, who is involved, and the kind of collaboration you have in mind.",
+    remixMessagePh: "A little about the track, the permissions or stems available, and the direction you have in mind.",
     dmcaNote: "Copyright takedown. Identifiable details are required and submitted under penalty of perjury — false claims may carry legal consequences.",
     legalName: "Full legal name",
     legalNamePh: "Your full legal name",
@@ -1780,10 +2478,12 @@ function contactBodyDesign(lang) {
     gdprDetails: "Details of your request",
     gdprDetailsPh: "Describe what you are requesting",
     gdprConfirm: "I confirm the information above is accurate and relates to me, or to someone I am authorized to represent.",
-    ip: "Your IP address",
-    ipLoading: "detecting...",
-    ipNote: "Included only in the email you send, as a security measure to identify the sender — it is not stored anywhere else.",
-    ipPrivacy: "Read the privacy policy"
+    privacyTitle: "Privacy at a glance",
+    privacyPurpose: "Controller: the individual artist using the BladesBeats artist name, based in Sevilla. Required fields are used to answer your request and, where relevant, prepare a possible booking.",
+    privacyBasis: "Legal basis: your request, requested pre-contractual steps, and the legitimate interest in protecting the form. Hetzner, Cloudflare, Resend, and the mailbox provider help host, secure, and deliver the message; some processing may take place outside the EEA with contractual safeguards.",
+    privacyRights: "You can exercise your data-protection rights through the privacy contact. Submitting this form will not add you to a marketing list.",
+    securityNote: "Cloudflare Turnstile verifies the submission and may process technical security data.",
+    privacyLink: "Full information and privacy contact"
   };
   const options = (items) => items.map((item) => `<option>${escapeHtml(item)}</option>`).join("");
   return `<div class="bb-contact-grid">
@@ -1798,7 +2498,7 @@ function contactBodyDesign(lang) {
       <div class="contact-line"><span>${escapeHtml(t.base)}</span><span class="contact-value">${escapeHtml(t.baseValue)}</span></div>
     </div>
   </aside>
-  <form class="contact-form" data-contact-form data-type-label="${escapeAttr(t.type)}" data-default-type="${escapeAttr(t.booking)}" data-form-send="${escapeAttr(t.send)}" data-form-sending="${escapeAttr(t.sending)}" data-form-success="${escapeAttr(t.success)}" data-form-mailto="${escapeAttr(t.mailto)}" data-form-error="${escapeAttr(t.error)}" data-captcha-required="${escapeAttr(t.captcha)}" data-ip-label="${escapeAttr(t.ip)}" data-label-default="${escapeAttr(t.message)}" data-message-default="${escapeAttr(t.messagePh)}" data-message-mixing="${escapeAttr(t.mmMessagePh)}" data-message-courses="${escapeAttr(t.dcMessagePh)}" data-message-collaboration="${escapeAttr(t.collabMessagePh)}" data-message-dmca="${escapeAttr(t.dmcaMsgPh)}" data-message-gdpr="${escapeAttr(t.gdprDetailsPh)}" data-label-dmca="${escapeAttr(t.dmcaMsg)}" data-label-gdpr="${escapeAttr(t.gdprDetails)}">
+  <form class="contact-form" data-contact-form data-type-label="${escapeAttr(t.type)}" data-default-type="${escapeAttr(t.booking)}" data-form-send="${escapeAttr(t.send)}" data-form-sending="${escapeAttr(t.sending)}" data-form-success="${escapeAttr(t.success)}" data-form-mailto="${escapeAttr(t.mailto)}" data-form-error="${escapeAttr(t.error)}" data-captcha-required="${escapeAttr(t.captcha)}" data-label-default="${escapeAttr(t.message)}" data-message-default="${escapeAttr(t.messagePh)}" data-message-mixing="${escapeAttr(t.mmMessagePh)}" data-message-courses="${escapeAttr(t.dcMessagePh)}" data-message-collaboration="${escapeAttr(t.collabMessagePh)}" data-message-dmca="${escapeAttr(t.dmcaMsgPh)}" data-message-gdpr="${escapeAttr(t.gdprDetailsPh)}" data-label-dmca="${escapeAttr(t.dmcaMsg)}" data-label-gdpr="${escapeAttr(t.gdprDetails)}">
     <label class="form-field"><span>${escapeHtml(t.name)}</span><input class="bb-input" name="name" type="text" required autocomplete="name" placeholder="${escapeAttr(t.namePh)}"></label>
     <label class="form-field"><span>${escapeHtml(t.email)}</span><input class="bb-input" name="email" type="email" required autocomplete="email" placeholder="you@email.com"></label>
     <label class="form-field contact-type-field"><span>${escapeHtml(t.type)}</span><select class="bb-input" name="request_type" data-contact-type><option value="booking">${escapeHtml(t.booking)}</option><option value="collaboration">${escapeHtml(t.collab)}</option><option value="mixing">${escapeHtml(t.mixing)}</option><option value="courses">${escapeHtml(t.courses)}</option><option value="dmca">${escapeHtml(t.dmca)}</option><option value="gdpr">${escapeHtml(t.gdpr)}</option><option value="other">${escapeHtml(t.other)}</option></select></label>
@@ -1815,7 +2515,13 @@ function contactBodyDesign(lang) {
     <div class="contact-form-group" data-contact-group="dmca" hidden><p class="form-alert">${escapeHtml(t.dmcaNote)}</p><label class="form-field"><span>${escapeHtml(t.legalName)}</span><input class="bb-input" name="legal_name" type="text" placeholder="${escapeAttr(t.legalNamePh)}"></label><label class="form-field"><span>${escapeHtml(t.rights)}</span><input class="bb-input" name="rights_holder" type="text" placeholder="${escapeAttr(t.rightsPh)}"></label><label class="form-field"><span>${escapeHtml(t.infringing)}</span><textarea class="bb-input" name="infringing_urls" rows="3" placeholder="${escapeAttr(t.infringingPh)}"></textarea></label><label class="form-field"><span>${escapeHtml(t.original)}</span><textarea class="bb-input" name="original_work" rows="2" placeholder="${escapeAttr(t.originalPh)}"></textarea></label><label class="form-check"><input type="checkbox" name="dmca_declaration" value="confirmed"><span>${escapeHtml(t.dmcaDecl)}</span></label></div>
     <div class="contact-form-group" data-contact-group="gdpr" hidden><p class="form-alert">${escapeHtml(t.gdprNote)}</p><label class="form-field"><span>${escapeHtml(t.legalName)}</span><input class="bb-input" name="legal_name" type="text" placeholder="${escapeAttr(t.legalNamePh)}"></label><label class="form-field"><span>${escapeHtml(t.gdprType)}</span><select class="bb-input" name="gdpr_request">${options(t.gdprTypes)}</select></label><label class="form-field"><span>${escapeHtml(t.country)}</span><input class="bb-input" name="country" type="text" placeholder="${escapeAttr(t.countryPh)}"></label><label class="form-check"><input type="checkbox" name="gdpr_identity" value="confirmed"><span>${escapeHtml(t.gdprConfirm)}</span></label></div>
     <label class="form-field"><span data-contact-message-label>${escapeHtml(t.message)}</span><textarea class="bb-input" name="message" rows="5" required placeholder="${escapeAttr(t.messagePh)}"></textarea></label>
-    <div class="form-meta"><div class="form-meta-row"><span class="form-meta-label">${escapeHtml(t.ip)}</span><strong data-contact-ip>${escapeHtml(t.ipLoading)}</strong></div><small>${escapeHtml(t.ipNote)}</small><a href="${isEs ? "/politica-privacidad/" : "/privacy-policy/"}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.ipPrivacy)}</a></div>
+    <div class="form-privacy-notice" aria-label="${escapeAttr(t.privacyTitle)}">
+      <strong>${escapeHtml(t.privacyTitle)}</strong>
+      <p>${escapeHtml(t.privacyPurpose)}</p>
+      <p>${escapeHtml(t.privacyBasis)}</p>
+      <p>${escapeHtml(t.privacyRights)} <a href="${isEs ? "/politica-privacidad/" : "/privacy-policy/"}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.privacyLink)}</a>.</p>
+      <small>${escapeHtml(t.securityNote)}</small>
+    </div>
     <div id="bb-turnstile" class="turnstile-slot"></div>
     <button class="contact-submit" type="submit" data-contact-submit>${escapeHtml(t.send)}</button>
     <p class="form-status" data-contact-status aria-live="polite"></p>
@@ -1827,17 +2533,17 @@ function buildBookingPage(lang = "en") {
   const isEs = lang === "es";
   const canonical = isEs ? PAGE_ALTERNATES.booking.es : PAGE_ALTERNATES.booking.en;
   const description = isEs
-    ? "Contratación DJ en Sevilla para BladesBeats. Contacto directo por Instagram para bolos, remixes, colaboraciones y mensajes."
-    : "DJ booking inquiries for BladesBeats in Sevilla. Contact directly on Instagram for bookings, remixes, collaborations, and messages.";
+    ? "Contacto con BladesBeats para bolos, festivales, eventos privados y colaboraciones, con atención en español e inglés."
+    : "Contact BladesBeats about club nights, festivals, private events, and collaborations, in English or Spanish.";
   return basePage({
-    title: isEs ? "Contratar DJ en Sevilla | BladesBeats" : "DJ Bookings in Sevilla | BladesBeats",
+    title: isEs ? "Contacto con BladesBeats | DJ en Sevilla" : "Contact BladesBeats | DJ in Sevilla",
     description,
     canonical,
     label: isEs ? "Contacto" : "Contact",
-    h1: isEs ? "Contratar DJ en Sevilla" : "DJ bookings in Sevilla",
+    h1: isEs ? "Hablemos" : "Let’s connect",
     intro: isEs
-      ? "Para contratación DJ, bolos, remixes, colaboraciones o mensajes directos, contacta con BladesBeats en Instagram."
-      : "For DJ bookings, remixes, collaborations, or direct messages, contact BladesBeats on Instagram.",
+      ? "Para contrataciones, colaboraciones o cualquier pregunta sobre la música, puedes escribir en español o en inglés."
+      : "For bookings, collaborations, or a question about the music, you’re welcome to get in touch in English or Spanish.",
     activeNav: "booking",
     lang,
     alternates: PAGE_ALTERNATES.booking,
@@ -1888,10 +2594,10 @@ function buildAboutPage(lang = "en") {
       <div class="timeline-item"><b>2025</b><div><h3>Impulsa</h3><p>${isEs ? "La formación DJ con Quini Rivera en Impulsa Music Center conectó la parte de producción y la parte DJ del perfil." : "DJ training with Quini Rivera at Impulsa Music Center connected the production and DJ sides of the profile."}</p></div></div>
     </div>
     <div class="side-project">
-      <span>${isEs ? "Proyecto aparte" : "Side project"}</span>
-      <strong>dj.bladesbeats.com</strong>
-      <p>${isEs ? "Sitio separado de herramientas DJ." : "Separate DJ utility site."}</p>
-      <a href="https://dj.bladesbeats.com/" target="_blank" rel="noopener noreferrer">${isEs ? "Abrir dj.bladesbeats.com" : "Open dj.bladesbeats.com"}</a>
+      <span>${isEs ? "Catálogo oficial" : "Official catalog"}</span>
+      <strong>${isEs ? "Música de BladesBeats" : "BladesBeats music"}</strong>
+      <p>${isEs ? "Lanzamientos, remixes y sesiones oficiales." : "Official releases, remixes, and DJ sets."}</p>
+      <a href="${isEs ? "/es/musica/" : "/music/"}">${isEs ? "Catálogo musical" : "Music catalog"}</a>
     </div>
   </aside>
 </div>`;
@@ -1914,60 +2620,64 @@ function buildAboutPageDesign(lang = "en") {
   const isEs = lang === "es";
   const canonical = isEs ? PAGE_ALTERNATES.about.es : PAGE_ALTERNATES.about.en;
   const description = isEs
-    ? "Historia de BladesBeats: DJ y productor con raíces en Oslo y base actual en Sevilla."
-    : "About BladesBeats: Norwegian-born DJ and producer with Oslo roots and a current base in Sevilla.";
+    ? "La historia de BladesBeats, DJ y productor noruego afincado en Sevilla, desde los espacios musicales comunitarios de Oslo hasta su trabajo actual."
+    : "The BladesBeats story, from community music spaces in Oslo to the studios and DJ booths that shape the project in Sevilla today.";
   const bio = isEs ? {
     label: "Sobre mí",
     h1: "Sobre BladesBeats",
-    intro: "Raíces en Oslo, base en Sevilla y una dirección electrónica orientada al club.",
+    intro: "Una historia musical que empezó en Oslo y encontró su siguiente capítulo en Sevilla.",
     title: "Detrás de BladesBeats",
     base: "Sevilla, España",
     factOrigin: "Origen",
     factBase: "Base actual",
     factLang: "Idiomas",
-    lead: "BladesBeats es un DJ y productor noruego basado en Sevilla, España.",
-    p2: "La música empezó en Oslo a principios de la década de 2010, a través de espacios juveniles y comunitarios alrededor de Holmlia. BUSH y Café Condio le dieron acceso temprano a equipo de estudio, gente haciendo música y la primera oportunidad real de producir. Sin esos espacios, probablemente el proyecto no existiría.",
-    p3: "Después de mudarse a Sevilla en 2017, la música desapareció de su vida durante varios años. Volvió más tarde casi por accidente, primero con beatmaking y sesiones con vocalistas, y después con un movimiento más claro hacia la música electrónica.",
-    p4: "Ese cambio llevó al trabajo de producción con <a href=\"https://basterbeats.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Manuel Ávila / Baster Beats</a> en Sevilla, desarrollando temas originales y remixes mediante trabajo regular de estudio.",
-    p5: "La parte DJ llegó después, con formación junto a <a href=\"https://impulsamusiccenter.es/quini-rivera/\" target=\"_blank\" rel=\"noopener noreferrer\">Quini Rivera</a> en Impulsa Music Center en 2025, conectando producción, técnica, transiciones y energía de sala.",
-    p6: "Hoy BladesBeats trabaja entre producción de estudio, sesiones DJ y bolos, con un sonido enfocado al club construido alrededor de energía, movimiento y la sala.",
-    p7: "Raíces noruegas, base en Sevilla, inglés y español. Para contratación o contacto directo, Instagram es la vía principal.",
+    lead: "BladesBeats es un DJ y productor noruego afincado en Sevilla, con música electrónica pensada para la noche, el movimiento y la gente que comparte la pista.",
+    p2: "El primer capítulo comenzó en Holmlia, Oslo, a principios de la década de 2010. Espacios juveniles y comunitarios como BUSH y Café Condio ofrecieron acceso a estudios, un entorno creativo y la primera oportunidad real de convertir la curiosidad en música.",
+    p3: "Tras mudarse a Sevilla en 2017, el proyecto quedó en silencio durante unos años. El beatmaking y las sesiones con vocalistas devolvieron la chispa, seguidos por una inmersión más profunda en la música electrónica.",
+    p4: "El trabajo regular de estudio con <a href=\"https://basterbeats.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Manuel Ávila / Baster Beats</a> dio espacio a esa nueva dirección a través de temas originales y remixes.",
+    p5: "En 2025, la formación DJ con <a href=\"https://impulsamusiccenter.es/quini-rivera/\" target=\"_blank\" rel=\"noopener noreferrer\">Quini Rivera</a> en Impulsa Music Center acercó el estudio y la cabina: técnica, transiciones y una relación más cercana con la sala.",
+    p6: "Hoy, BladesBeats reúne esos hilos en lanzamientos originales, remixes, sesiones DJ y actuaciones: música construida alrededor de la energía, el movimiento y la conexión.",
+    p7: "Con base en Sevilla y disponible en español e inglés, BladesBeats recibe con gusto mensajes sobre bolos y colaboraciones a través de la <a href=\"/es/contratar-dj-sevilla/\">página de contacto</a>.",
     timeline: [
-      ["Origen", "Oslo", "Originario de Oslo, Noruega, donde empezó a experimentar con producción musical a principios de la década de 2010."],
-      ["2017", "Sevilla", "Se mudó a Sevilla, España, donde la música siguió con él y más tarde tomó una dirección más fuerte."],
-      ["2023", "Enfoque de producción", "El perfil artístico de BladesBeats se volvió más enfocado a través del trabajo de producción con Manuel Ávila / Baster Beats."],
-      ["2025", "Impulsa", "La formación DJ con Quini Rivera en Impulsa Music Center conectó la parte de producción y la parte DJ del perfil."]
+      ["Origen", "Oslo", "Las primeras ideas tomaron forma en los espacios musicales juveniles y comunitarios de Holmlia."],
+      ["2017", "Sevilla", "El traslado a Sevilla abrió un nuevo capítulo y, con el tiempo, el camino de vuelta a la música."],
+      ["2023", "Producción", "El trabajo con Manuel Ávila / Baster Beats dio una dirección más clara a los temas originales y los remixes."],
+      ["2025", "Cabina", "La formación con Quini Rivera conectó la producción con la técnica DJ y la energía de una sala en directo."]
     ],
-    sideLabel: "Proyecto aparte",
-    sideCopy: "Sitio separado de herramientas DJ.",
-    sideLink: "Abrir dj.bladesbeats.com"
+    sideLabel: "Música",
+    sideTitle: "El catálogo de BladesBeats",
+    sideCopy: "Lanzamientos originales, remixes, instrumentales y sesiones DJ completas, reunidos en un solo lugar.",
+    sideLink: "Catálogo musical",
+    sideHref: "/es/musica/"
   } : {
     label: "About",
     h1: "About BladesBeats",
-    intro: "Oslo roots, Sevilla base, and an electronic club-focused direction.",
+    intro: "A music story that began in Oslo and found its next chapter in Sevilla.",
     title: "Behind BladesBeats",
     base: "Sevilla, Spain",
     factOrigin: "Origin",
     factBase: "Current base",
     factLang: "Languages",
-    lead: "BladesBeats is a Norwegian DJ and producer based in Sevilla, Spain.",
-    p2: "The music started in Oslo in the early 2010s, through youth and community spaces around Holmlia. BUSH and Café Condio gave him early access to studio equipment, music people, and the first real chance to produce. Without those rooms, the project probably would not exist.",
-    p3: "After moving to Sevilla in 2017, music disappeared from his life for several years. It came back later almost by accident, first through beatmaking and vocal sessions, then through a stronger move into electronic music.",
-    p4: "That shift led to production work with <a href=\"https://basterbeats.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Manuel Ávila / Baster Beats</a> in Sevilla, developing original tracks and remixes through regular studio work.",
-    p5: "The DJ side came later, with training from <a href=\"https://impulsamusiccenter.es/quini-rivera/\" target=\"_blank\" rel=\"noopener noreferrer\">Quini Rivera</a> at Impulsa Music Center in 2025, connecting production, technique, transitions, and room energy.",
-    p6: "Today BladesBeats works across studio production, DJ sets, and live gigs, with a club-focused sound built around energy, movement, and the room.",
-    p7: "Norwegian roots, Sevilla base, English and Spanish. For booking or direct contact, Instagram is the main route.",
+    lead: "BladesBeats is a Norwegian DJ and producer based in Sevilla, making electronic music for late nights, moving rooms, and the people in them.",
+    p2: "The first chapter began in Holmlia, Oslo, in the early 2010s. Youth and community spaces including BUSH and Café Condio offered studio access, a creative circle, and the first real chance to turn curiosity into music.",
+    p3: "After moving to Sevilla in 2017, the project went quiet for a few years. Beatmaking and sessions with vocalists brought the spark back, followed by a deeper move into electronic music.",
+    p4: "Regular studio work with <a href=\"https://basterbeats.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Manuel Ávila / Baster Beats</a> gave that new direction room to grow through original tracks and remixes.",
+    p5: "In 2025, DJ training with <a href=\"https://impulsamusiccenter.es/quini-rivera/\" target=\"_blank\" rel=\"noopener noreferrer\">Quini Rivera</a> at Impulsa Music Center brought the studio and booth closer together: technique, transitions, and a stronger feel for the room.",
+    p6: "Today, BladesBeats brings those threads together across original releases, remixes, DJ sets, and live appearances—music built around energy, movement, and connection.",
+    p7: "Based in Sevilla and comfortable in English or Spanish, BladesBeats welcomes messages about gigs and collaborations through the <a href=\"/booking/\">contact page</a>.",
     timeline: [
-      ["Origin", "Oslo", "Originally from Oslo, Norway, where he began experimenting with music production in the early 2010s."],
-      ["2017", "Sevilla", "Moved to Sevilla, Spain, where the music stayed with him and later developed into a stronger direction."],
-      ["2023", "Production focus", "The BladesBeats artist profile became more focused through production work with Manuel Ávila / Baster Beats."],
-      ["2025", "Impulsa", "DJ training with Quini Rivera at Impulsa Music Center connected the production and DJ sides of the profile."]
+      ["Origin", "Oslo", "The first ideas took shape in Holmlia’s youth and community music spaces."],
+      ["2017", "Sevilla", "A move to Sevilla began a new chapter and, in time, a path back to music."],
+      ["2023", "Production", "Work with Manuel Ávila / Baster Beats brought a clearer focus to original tracks and remixes."],
+      ["2025", "DJ booth", "Training with Quini Rivera connected production with DJ technique and the feel of a live room."]
     ],
-    sideLabel: "Side project",
-    sideCopy: "Separate DJ utility site.",
-    sideLink: "Open dj.bladesbeats.com"
+    sideLabel: "Music",
+    sideTitle: "The BladesBeats catalog",
+    sideCopy: "Original releases, remixes, instrumentals, and full DJ sets, all in one place.",
+    sideLink: "Music catalog",
+    sideHref: "/music/"
   };
-  const timeline = bio.timeline.map(([year, place, note]) => `<article class="timeline-item"><b>${escapeHtml(year)}</b><div><h3>${escapeHtml(place)}</h3><p>${escapeHtml(note)}</p></div></article>`).join("\n");
+  const timeline = bio.timeline.map(([year, place, note]) => `<article class="timeline-item"><b>${escapeHtml(year)}</b><div><h2>${escapeHtml(place)}</h2><p>${escapeHtml(note)}</p></div></article>`).join("\n");
   const body = `<div class="story-layout">
   <div class="story-feature">
     <figure class="artist-photo-card">
@@ -1987,7 +2697,7 @@ function buildAboutPageDesign(lang = "en") {
         <p>${bio.p4}</p>
         <p>${bio.p5}</p>
         <p>${escapeHtml(bio.p6)}</p>
-        <p>${escapeHtml(bio.p7)}</p>
+        <p>${bio.p7}</p>
       </div>
     </article>
   </div>
@@ -1995,14 +2705,14 @@ function buildAboutPageDesign(lang = "en") {
     <div class="timeline">${timeline}</div>
     <div class="side-project">
       <span>${escapeHtml(bio.sideLabel)}</span>
-      <strong>dj.bladesbeats.com</strong>
+      <strong>${escapeHtml(bio.sideTitle)}</strong>
       <p>${escapeHtml(bio.sideCopy)}</p>
-      <a href="https://dj.bladesbeats.com/" target="_blank" rel="noopener noreferrer">${escapeHtml(bio.sideLink)}</a>
+      <a href="${escapeAttr(bio.sideHref)}">${escapeHtml(bio.sideLink)}</a>
     </div>
   </div>
 </div>`;
   return basePage({
-    title: isEs ? "Sobre BladesBeats | DJ y productor en Sevilla" : "About BladesBeats | DJ and Producer in Sevilla",
+    title: isEs ? "Sobre BladesBeats | DJ y productor en Sevilla" : "About BladesBeats | DJ and producer in Sevilla",
     description,
     canonical,
     label: bio.label,
@@ -2020,13 +2730,13 @@ function appearanceCard(lang = "en", href = "/#appearances") {
   const isEs = lang === "es";
   return `<div class="appearances-grid">
   <a class="appearance-card" href="${escapeAttr(href)}">
-    <div class="appearance-mark"><img class="appearance-logo" src="/gigs/expoestepona/expotattoo-estepona-logo-wide.jpg" alt="ExpoTattoo Estepona 2026 logo - BladesBeats DJ appearance in Estepona" width="1427" height="975" loading="lazy" decoding="async"></div>
+    <div class="appearance-mark"><img class="appearance-logo" src="/gigs/expoestepona/expotattoo-estepona-logo-wide.jpg" alt="${isEs ? "Logotipo de ExpoTattoo Estepona 2026 para la actuación de BladesBeats" : "ExpoTattoo Estepona 2026 logo for the BladesBeats appearance"}" width="1427" height="975" loading="lazy" decoding="async"></div>
     <div>
-      <span class="appearance-label">${isEs ? "Actuaciones anteriores" : "Past appearances"}</span>
+       <span class="appearance-label">${isEs ? "Actuación anterior" : "Past appearance"}</span>
       <span class="appearance-title">ExpoTattoo Estepona</span>
       <p class="appearance-meta">2026</p>
       <p class="appearance-summary">${isEs ? "Aparición DJ en Estepona, Andalucía." : "DJ appearance in Estepona, Andalucía."}</p>
-      <span class="appearance-link">${isEs ? "Detalles" : "Details"}</span>
+       <span class="appearance-link">${isEs ? "Detalles del evento" : "Event details"}</span>
     </div>
   </a>
 </div>`;
@@ -2040,28 +2750,36 @@ function buildGigsIndexPage(gigs, lang = "en") {
   const isEs = lang === "es";
   const canonical = isEs ? PAGE_ALTERNATES.gigs.es : PAGE_ALTERNATES.gigs.en;
   const description = isEs
-    ? "Bolos y actuaciones anteriores de BladesBeats, DJ y productor basado en Sevilla."
-    : "Past gigs and appearances for BladesBeats, DJ and producer based in Sevilla.";
-  const cards = gigs.map((gig) => {
+    ? "Actuaciones anteriores de BladesBeats e información de contacto para clubes, festivales, eventos privados y colaboraciones."
+    : "Past BladesBeats appearances and contact details for club nights, festivals, private events, and collaborations.";
+  const cards = gigs.map((gig, index) => {
     const href = gigDetailPath(gig.slug, lang);
-    return `<a class="appearance-card" href="${escapeAttr(href)}">
-    <div class="appearance-mark"><img class="appearance-logo" src="${escapeAttr(gig.logoImage || "/og-card.png")}" alt="${escapeAttr(gig.title)} logo" width="1427" height="975" loading="lazy" decoding="async"></div>
-    <div>
-      <span class="appearance-label">${isEs ? "Bolos" : "Gigs"}</span>
+    return `<a class="appearance-card${index === 0 ? " featured" : ""}" href="${escapeAttr(href)}">
+    <div class="appearance-mark"><img class="appearance-logo" src="${escapeAttr(gig.logoImage || "/og-card.png")}" alt="${escapeAttr(isEs ? `Logotipo de ${gig.title}` : `${gig.title} logo`)}" width="1427" height="975" loading="lazy" decoding="async"></div>
+    <div class="appearance-body">
+      <span class="appearance-label">${isEs ? "Actuación" : "Appearance"}</span>
       <span class="appearance-title">${escapeHtml(gig.title)}</span>
       <p class="appearance-meta">${escapeHtml(String(gig.year || gig.startDate?.slice(0, 4) || ""))}${gig.city ? ` · ${escapeHtml(gig.city)}` : ""}</p>
       <p class="appearance-summary">${escapeHtml(gigSummary(gig, isEs))}</p>
-      <span class="appearance-link">${isEs ? "Detalles" : "Details"}</span>
+      <span class="appearance-link">${isEs ? "Detalles del evento" : "Event details"}</span>
     </div>
   </a>`;
-  }).join("\n");
+  });
+  const featured = cards[0] || "";
+  const remaining = cards.slice(1).join("\n");
+  const bookingPanel = `<aside class="gigs-booking-panel">
+    <span>${isEs ? "Contratación DJ" : "DJ bookings"}</span>
+    <h2>${isEs ? "¿Hay un lugar para BladesBeats en tu evento?" : "Could BladesBeats fit your next event?"}</h2>
+    <p>${isEs ? "BladesBeats está disponible para noches de club, festivales, eventos privados y otros espacios donde la música encaje." : "BladesBeats is available for club nights, festivals, private events, and other spaces that suit the music."}</p>
+    <a class="button primary" href="${isEs ? "/es/contratar-dj-sevilla/" : "/booking/"}">${isEs ? "Contratación y disponibilidad" : "Bookings and availability"}</a>
+  </aside>`;
   return basePage({
-    title: isEs ? "Bolos y eventos | BladesBeats" : "Gigs | BladesBeats",
+    title: isEs ? "Actuaciones y contratación | BladesBeats" : "Live appearances and bookings | BladesBeats",
     description,
     canonical,
     label: isEs ? "Bolos" : "Gigs",
-    h1: isEs ? "Actuaciones anteriores." : "Past appearances.",
-    intro: isEs ? "Un registro en crecimiento de lugares donde BladesBeats ha tocado." : "A growing record of places BladesBeats has played.",
+    h1: isEs ? "Actuaciones en directo" : "Live appearances",
+    intro: isEs ? "Un archivo en crecimiento de bolos y apariciones de BladesBeats, con la historia y los datos de cada evento." : "A growing record of BladesBeats gigs and appearances, with the story and details behind each event.",
     activeNav: "gigs",
     lang,
     alternates: PAGE_ALTERNATES.gigs,
@@ -2075,16 +2793,17 @@ function buildGigsIndexPage(gigs, lang = "en") {
         "item": gigSchema(gig, gigDetailUrl(gig.slug, lang), lang)
       }))
     },
-    body: `<section class="appearances-grid">${cards}</section>`
+    body: `${featured ? `<section class="gigs-showcase">${featured}${bookingPanel}</section>` : bookingPanel}
+${remaining ? `<section class="appearances-grid">${remaining}</section>` : ""}`
   });
 }
 
 function buildGigDetailPage(gig, lang = "en") {
   const isEs = lang === "es";
   const detailUrl = gigDetailUrl(gig.slug, lang);
-  const description = isEs
-    ? `${gig.title} ${gig.year || ""} bolo de BladesBeats en ${gig.city || "España"}.`.slice(0, 155)
-    : `${gig.title} ${gig.year || ""} appearance for BladesBeats in ${gig.city || "Spain"}.`.slice(0, 155);
+  const description = compactMetaDescription(isEs
+    ? `${gig.title} ${gig.year || ""}: actuación de BladesBeats en ${gig.city || "España"}, con fechas, lugar, colaboradores y contexto del evento.`
+    : `${gig.title} ${gig.year || ""}: a BladesBeats appearance in ${gig.city || "Spain"}, with dates, venue, partners, and event context.`);
   const partnerLinks = Array.isArray(gig.partners)
     ? gig.partners.map((partner) => `<li><a href="${escapeAttr(partner.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(partner.name)}</a></li>`).join("")
     : "";
@@ -2097,7 +2816,7 @@ function buildGigDetailPage(gig, lang = "en") {
 </nav>
 <article class="release-detail">
   <div class="release-detail-cover">
-    <img src="${escapeAttr(gig.logoImage || "/og-card.png")}" alt="${escapeAttr(gig.title)} logo" width="800" height="548" loading="eager" decoding="async">
+    <img src="${escapeAttr(gig.logoImage || "/og-card.png")}" alt="${escapeAttr(isEs ? `Logotipo de ${gig.title}` : `${gig.title} logo`)}" width="800" height="548" loading="eager" decoding="async">
   </div>
   <div class="release-detail-body">
     <dl class="gig-facts">
@@ -2109,12 +2828,12 @@ function buildGigDetailPage(gig, lang = "en") {
     <p class="release-detail-text">${escapeHtml(isEs ? (gig.bodyEs || gig.summaryEs || gig.body || gig.summary || "") : (gig.body || gig.summary || ""))}</p>
     ${gig.cause ? `<p class="release-detail-meta gig-cause">${escapeHtml(isEs ? (gig.causeEs || gig.cause) : gig.cause)}</p>` : ""}
     ${partnerLinks ? `<ul class="release-card-platforms">${partnerLinks}</ul>` : ""}
-    <div class="release-detail-platforms"><a href="${isEs ? "/es/contratar-dj-sevilla/" : "/booking/"}">${isEs ? "Contacto para bolos" : "Contact for bookings"} <span aria-hidden="true">&rarr;</span></a></div>
-    <p><a class="back-link" href="${isEs ? "/es/eventos/" : "/gigs/"}">&larr; ${isEs ? "Volver a bolos" : "Back to gigs"}</a></p>
+    <div class="release-detail-platforms"><a href="${isEs ? "/es/contratar-dj-sevilla/" : "/booking/"}">${isEs ? "Contratación y disponibilidad" : "Bookings and availability"} <span aria-hidden="true">&rarr;</span></a></div>
+    <p><a class="back-link" href="${isEs ? "/es/eventos/" : "/gigs/"}">&larr; ${isEs ? "Actuaciones en directo" : "Live appearances"}</a></p>
   </div>
 </article>`;
   return basePage({
-    title: isEs ? `${escapeHtml(gig.title)} ${gig.year || ""} | BladesBeats bolo` : `${escapeHtml(gig.title)} ${gig.year || ""} | BladesBeats`,
+    title: compactReleasePageTitle(`${gig.title} ${gig.year || ""} — ${isEs ? "actuación" : "appearance"}`.trim()),
     description,
     canonical: detailUrl,
     label: isEs ? "Bolos" : "Gigs",
@@ -2128,51 +2847,75 @@ function buildGigDetailPage(gig, lang = "en") {
   });
 }
 
-function extractHomepageCopy(html) {
-  const start = html.indexOf("const COPY = ");
-  const end = html.indexOf("\nconst HTML_I18N_KEYS", start);
-  if (start === -1 || end === -1) throw new Error("Could not extract homepage COPY object.");
-  return vm.runInNewContext(`${html.slice(start, end)}\nCOPY`, {});
-}
-
 function replaceDataI18nText(html, key, value) {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const elementPattern = new RegExp(`(<([a-z0-9-]+)(?=[^>]*\\sdata-i18n="${escapedKey}")[^>]*>)([\\s\\S]*?)(<\\/\\2>)`, "gi");
   return html.replace(elementPattern, (match, open, tag, oldValue, close) => `${open}${value}${close}`);
 }
 
-function replaceDataI18nPlaceholder(html, key, value) {
-  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const placeholderPattern = new RegExp(`(<[^>]*data-i18n-placeholder="${escapedKey}"[^>]*\\splaceholder=")([^"]*)(")`, "gi");
-  return html.replace(placeholderPattern, (match, open, oldValue, close) => `${open}${escapeAttr(value)}${close}`);
-}
-
-function applySpanishHomepageDefaults(html) {
-  const copy = extractHomepageCopy(html).es;
-  let next = html;
-  Object.entries(copy).forEach(([key, value]) => {
-    if (typeof value !== "string") return;
-    next = replaceDataI18nText(next, key, value);
-    next = replaceDataI18nPlaceholder(next, key, value);
-  });
-  return next;
-}
+const SPANISH_HOMEPAGE_COPY = {
+  skip_to_content: "Saltar al contenido",
+  nav_releases: "Música",
+  nav_sets: "Sesiones",
+  nav_appearances: "Bolos",
+  nav_story: "Sobre mí",
+  nav_booking: "Contacto",
+  home_hero_eyebrow: "Raíces en Oslo &middot; Base en Sevilla &middot; <b>Desde 2017</b>",
+  home_hero_subtitle: "Música electrónica nacida entre las raíces de Oslo, las noches de Sevilla y la energía compartida de una pista de baile.",
+  home_hero_cta: "Último lanzamiento &nearr;",
+  home_feature_label: "Último lanzamiento",
+  home_feature_action: "Detalles del lanzamiento &nearr;",
+  home_latest_label: "Novedades de BladesBeats",
+  home_latest_release: "Último lanzamiento",
+  home_latest_set: "Última sesión",
+  catalog_count_release_one: "lanzamiento",
+  catalog_count_release_many: "lanzamientos",
+  catalog_count_set_one: "sesión",
+  catalog_count_set_many: "sesiones",
+  catalog_count_gig_one: "bolo",
+  catalog_count_gig_many: "bolos",
+  catalog_card_release_kind: "Lanzamiento",
+  catalog_card_release_page: "Página del lanzamiento",
+  catalog_fallback: "Una línea temporal interactiva de las entradas del catálogo de BladesBeats, con lanzamientos, sesiones DJ y bolos, además de un marcador en la fecha actual.",
+  catalog_legend_releases: "Lanzamientos",
+  catalog_legend_sets: "Sesiones",
+  catalog_legend_gigs: "Bolos",
+  catalog_mobile_note: "En móvil aparece una selección reciente.",
+  catalog_mobile_link: "Catálogo musical completo",
+  footer_tagline: "Música electrónica nacida entre Oslo y Sevilla, hecha para el movimiento, la conexión y la sala.",
+  footer_listen: "Plataformas",
+  footer_connect: "Redes y contacto",
+  footer_booking: "Contacto",
+  footer_site: "En la web",
+  footer_music: "Música",
+  footer_sets: "Sesiones",
+  footer_gigs: "Bolos",
+  footer_about: "Sobre mí",
+  footer_legal: "Legal",
+  footer_legal_notice: "Aviso legal",
+  footer_privacy: "Política de privacidad",
+  footer_cookies: "Política de cookies"
+};
 
 function buildSpanishHomePage() {
   let html = readText("index.html");
-  html = applySpanishHomepageDefaults(html);
+  Object.entries(SPANISH_HOMEPAGE_COPY).forEach(([key, value]) => {
+    html = replaceDataI18nText(html, key, value);
+  });
   html = html
     .replace('<html lang="en">', '<html lang="es">')
-    .replace("<title>BladesBeats | DJ &amp; Producer &middot; Sevilla</title>", "<title>BladesBeats | DJ y productor en Sevilla</title>")
-    .replace('<meta name="description" content="BladesBeats is a Norwegian-born DJ and producer based in Sevilla, Spain, focused on electronic music, DJ sets, and original music production.">', '<meta name="description" content="BladesBeats es un DJ y productor nacido en Noruega y basado en Sevilla, España, enfocado en música electrónica, sesiones DJ y producción original.">')
+    .replace("<title>BladesBeats | DJ &amp; Producer in Sevilla</title>", "<title>BladesBeats | DJ y productor en Sevilla</title>")
+    .replace('<meta name="description" content="BladesBeats is a Norwegian DJ and producer based in Sevilla, making electronic music shaped by Oslo roots, late nights, and the energy of the dance floor.">', '<meta name="description" content="BladesBeats es un DJ y productor noruego afincado en Sevilla, con música electrónica nacida entre sus raíces en Oslo y la energía de la pista de baile.">')
     .replace('<link rel="canonical" href="https://bladesbeats.com/">', '<link rel="canonical" href="https://bladesbeats.com/es/">')
-    .replace('<meta property="og:title" content="BladesBeats | DJ &amp; Producer &middot; Sevilla">', '<meta property="og:title" content="BladesBeats | DJ y productor en Sevilla">')
-    .replace('<meta property="og:description" content="Norwegian-born DJ and producer based in Sevilla, Spain.">', '<meta property="og:description" content="DJ y productor nacido en Noruega y basado en Sevilla, España.">')
+    .replace('<meta property="og:title" content="BladesBeats | DJ &amp; Producer in Sevilla">', '<meta property="og:title" content="BladesBeats | DJ y productor en Sevilla">')
+    .replace('<meta property="og:description" content="Norwegian DJ and producer in Sevilla, with electronic music shaped by Oslo roots and the energy of the dance floor.">', '<meta property="og:description" content="DJ y productor noruego en Sevilla, con música electrónica nacida entre sus raíces en Oslo y la energía de la pista de baile.">')
     .replace('<meta property="og:url" content="https://bladesbeats.com/">', '<meta property="og:url" content="https://bladesbeats.com/es/">')
     .replace('<meta property="og:locale" content="en_US">', '<meta property="og:locale" content="es_ES">')
     .replace('<meta property="og:locale:alternate" content="es_ES">', '<meta property="og:locale:alternate" content="en_US">')
-    .replace('<meta name="twitter:title" content="BladesBeats | DJ &amp; Producer &middot; Sevilla">', '<meta name="twitter:title" content="BladesBeats | DJ y productor en Sevilla">')
-    .replace('<meta name="twitter:description" content="Norwegian-born DJ and producer based in Sevilla, Spain.">', '<meta name="twitter:description" content="DJ y productor nacido en Noruega y basado en Sevilla, España.">')
+    .replace('<meta name="twitter:title" content="BladesBeats | DJ &amp; Producer in Sevilla">', '<meta name="twitter:title" content="BladesBeats | DJ y productor en Sevilla">')
+    .replace('<meta name="twitter:description" content="Norwegian DJ and producer in Sevilla, with electronic music shaped by Oslo roots and the energy of the dance floor.">', '<meta name="twitter:description" content="DJ y productor noruego en Sevilla, con música electrónica nacida entre sus raíces en Oslo y la energía de la pista de baile.">')
+    .replaceAll('"description": "Norwegian DJ and producer based in Sevilla, making electronic music shaped by Oslo roots, late nights, and the energy of the dance floor."', '"description": "DJ y productor noruego afincado en Sevilla, con música electrónica nacida entre sus raíces en Oslo y la energía de la pista de baile."')
+    .replace('"description": "Music, DJ sets, artist story, live appearances, and contact details for BladesBeats."', '"description": "Música, sesiones DJ, historia, actuaciones y datos de contacto de BladesBeats."')
     .replaceAll('href="/music/"', 'href="/es/musica/"')
     .replaceAll('href="/dj-sets/"', 'href="/es/sesiones/"')
     .replaceAll('href="/gigs/"', 'href="/es/eventos/"')
@@ -2184,10 +2927,24 @@ function buildSpanishHomePage() {
     .replaceAll('"url": "/gigs/', '"url": "/es/eventos/')
     .replaceAll('href="/about/"', 'href="/es/sobre-bladesbeats/"')
     .replaceAll('href="/booking/"', 'href="/es/contratar-dj-sevilla/"')
+    .replace(/aria-label="Latest release: ([^"]+)"/, 'aria-label="Último lanzamiento: $1"')
     .replaceAll('href="/legal-notice/"', 'href="/aviso-legal/"')
     .replaceAll('href="/privacy-policy/"', 'href="/politica-privacidad/"')
     .replaceAll('href="/cookie-policy/"', 'href="/politica-cookies/"')
-    .replace(">EN / ES</button>", ">ES / EN</button>");
+    .replace('aria-label="BladesBeats home"', 'aria-label="Inicio de BladesBeats"')
+    .replace('aria-label="Primary navigation"', 'aria-label="Navegación principal"')
+    .replace(/alt="([^"]+) cover artwork"/, 'alt="Portada de $1"')
+    .replace('aria-label="Latest catalogue highlights"', 'aria-label="Novedades del catálogo"')
+    .replaceAll('aria-label="Latest release:', 'aria-label="Último lanzamiento:')
+    .replaceAll('aria-label="Latest set:', 'aria-label="Última sesión:')
+    .replace('aria-label="Catalogue timeline visualisation"', 'aria-label="Visualización cronológica del catálogo"')
+    .replace('aria-label="Interactive catalogue entries"', 'aria-label="Entradas interactivas del catálogo"')
+    .replace('aria-label="Close catalogue card"', 'aria-label="Cerrar ficha del catálogo"')
+    .replace('aria-label="Timeline legend"', 'aria-label="Leyenda de la línea temporal"')
+    .replace(
+      '<a class="site-nav-lang" href="/es/" hreflang="es" lang="es" aria-label="Ver sitio en español">EN / ES</a>',
+      '<a class="site-nav-lang" href="/" hreflang="en" lang="en" aria-label="View site in English">ES / EN</a>'
+    );
   return html;
 }
 
@@ -2202,51 +2959,26 @@ function buildSpanishMusicPage(releases, generatedReleaseUrls, sets) {
       "item": releaseSchema(release, generatedReleaseUrls.get(release.slug) || "")
     }))
   };
+  const youtubeUrl = PLATFORM_LINKS.find(([name]) => name === "YouTube")?.[1] || "";
   const spotifyUrl = PLATFORM_LINKS.find(([name]) => name === "Spotify")?.[1] || "";
-  const appleUrl = PLATFORM_LINKS.find(([name]) => name === "Apple Music")?.[1] || "";
   return basePage({
-    title: "Música | BladesBeats",
-    description: "Música, lanzamientos y plataformas oficiales de BladesBeats.",
+    title: "Música y remixes | BladesBeats",
+    description: "Singles, remixes, instrumentales y sesiones DJ de BladesBeats, con vídeos en YouTube y enlaces de escucha en las principales plataformas.",
     canonical: PAGE_ALTERNATES.music.es,
     label: "Música",
     h1: "Música",
-    intro: "Escucha, mira y sigue a BladesBeats en las plataformas oficiales.",
+    intro: "Lanzamientos originales, remixes, instrumentales y sesiones DJ, reunidos con enlaces verificados a las plataformas donde están disponibles.",
     activeNav: "music",
     lang: "es",
     alternates: PAGE_ALTERNATES.music,
     jsonLd: itemList,
     body: `<div class="platform-actions">
-  <a class="button primary" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">Spotify</a>
-  <a class="button" href="${escapeAttr(appleUrl)}" target="_blank" rel="noopener noreferrer">Apple Music</a>
-  <a class="button" href="/es/sesiones/">Sesiones DJ</a>
+  <a class="button primary" href="${escapeAttr(youtubeUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats en YouTube</a>
+  <a class="button" href="${escapeAttr(spotifyUrl)}" target="_blank" rel="noopener noreferrer">BladesBeats en Spotify</a>
+  <a class="button" href="/es/sesiones/">Archivo de sesiones DJ</a>
 </div>
+${releasePreview(releases, "es")}
 ${platformCatalog(releases, sets, "es")}`
-  });
-}
-
-function buildDjToolkitPage() {
-  const canonical = `${SITE}/dj-toolkit/`;
-  const description = "DJ Toolkit is a separate BladesBeats utility project for DJ tools and workflow helpers.";
-  const body = `<div class="detail-layout">
-  <article class="detail-main">
-    <h2>DJ Toolkit</h2>
-    <p>DJ Toolkit is a separate utility project connected to BladesBeats. It stays secondary to the official artist homepage.</p>
-    <div class="platform-actions"><a class="button primary" href="https://dj.bladesbeats.com/" target="_blank" rel="noopener noreferrer">Open dj.bladesbeats.com</a></div>
-  </article>
-  <aside class="detail-side">
-    <img src="/og-card.png" alt="BladesBeats DJ and producer graphic" width="1200" height="630" loading="lazy" decoding="async">
-  </aside>
-</div>`;
-  return basePage({
-    title: "DJ Toolkit | BladesBeats",
-    description,
-    canonical,
-    label: "Side project",
-    h1: "DJ Toolkit",
-    intro: "Separate DJ utility project by BladesBeats.",
-    activeNav: "",
-    jsonLd: { "@context": "https://schema.org", "@type": "WebApplication", "name": "DJ Toolkit", "url": "https://dj.bladesbeats.com/", "creator": { "@type": "Person", "@id": ARTIST_ID, "name": "BladesBeats" } },
-    body
   });
 }
 
@@ -2298,17 +3030,18 @@ function buildLegalNoticePage(lang = "en") {
         title: "Identificación",
         html: `<p><strong>Sitio:</strong> ${escapeHtml(legal.website)}</p>
     <p><strong>Nombre público:</strong> ${escapeHtml(legal.tradeName)}</p>
+    <p><strong>Operador:</strong> persona física que utiliza BladesBeats como nombre artístico.</p>
     <p><strong>Actividad:</strong> música, sesiones DJ, bolos y contacto para contratación o colaboraciones.</p>
     <p><strong>Base pública:</strong> ${escapeHtml(publicLocation)}</p>
     <p><strong>Contacto:</strong> ${mailtoLegalLink(legal)}</p>`
       },
       {
-        title: "Datos no publicados",
-        html: `<p>No se publican domicilio privado, identificadores fiscales privados ni datos registrales no verificados.</p>
-    <p>Si una contratación requiere datos legales o fiscales, se facilitan de forma privada a la parte contratante.</p>`
+        title: "Situación del operador",
+        html: `<p>BladesBeats no es una sociedad mercantil ni se presenta como tal. Por ello no existe un CIF ni una inscripción mercantil a nombre de BladesBeats.</p>
+    <p>Los datos civiles, fiscales o de domicilio que resulten aplicables a la persona física solo se incorporarán aquí una vez verificados. No se publican datos supuestos o incorrectos.</p>`
       },
       {
-        title: "Uso del sitio",
+        title: "Qué hace este sitio",
         html: `<p>bladesbeats.com es una página artística e informativa. No hay tienda online, precios publicados, pagos dentro del sitio, reservas automáticas ni contratación electrónica.</p>`
       },
       {
@@ -2318,10 +3051,10 @@ function buildLegalNoticePage(lang = "en") {
       },
       {
         title: "Enlaces externos",
-        html: `<p>Spotify, Apple Music, Mixcloud, YouTube, Instagram, TikTok y otros servicios enlazados aplican sus propias condiciones, disponibilidad y políticas.</p>`
+        html: `<p>YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok y otros servicios enlazados aplican sus propias condiciones, disponibilidad y políticas. Un enlace no implica control ni responsabilidad sobre el servicio externo.</p>`
       },
       {
-        title: "Actualización",
+        title: "Última actualización",
         html: `<p><small>Última actualización: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ] : [
@@ -2329,17 +3062,18 @@ function buildLegalNoticePage(lang = "en") {
         title: "Identity",
         html: `<p><strong>Site:</strong> ${escapeHtml(legal.website)}</p>
     <p><strong>Public name:</strong> ${escapeHtml(legal.tradeName)}</p>
+    <p><strong>Operator:</strong> an individual using BladesBeats as an artist name.</p>
     <p><strong>Activity:</strong> music, DJ sets, gigs, and contact for bookings or collaborations.</p>
     <p><strong>Public base:</strong> ${escapeHtml(publicLocation)}</p>
-    <p><strong>Contact:</strong> ${mailtoLegalLink(legal, "email contact")}</p>`
+    <p><strong>Contact:</strong> ${mailtoLegalLink(legal, "email BladesBeats")}</p>`
       },
       {
-        title: "Details not published",
-        html: `<p>A private home address, private tax identifiers and unverified registry details are not published.</p>
-    <p>If a booking requires legal or tax details, they are provided privately to the contracting party.</p>`
+        title: "Operator status",
+        html: `<p>BladesBeats is not a registered company and is not presented as one. There is therefore no company CIF or commercial-register entry in the BladesBeats name.</p>
+    <p>Civil identity, tax, or address details applicable to the individual will only be added here after verification. Assumed or incorrect details are not published.</p>`
       },
       {
-        title: "Site use",
+        title: "What this site does",
         html: `<p>bladesbeats.com is an artist and information website. There is no online shop, published price list, site payment, automatic reservation, or electronic contracting flow.</p>`
       },
       {
@@ -2349,21 +3083,21 @@ function buildLegalNoticePage(lang = "en") {
       },
       {
         title: "External links",
-        html: `<p>Spotify, Apple Music, Mixcloud, YouTube, Instagram, TikTok and other linked services apply their own terms, availability and policies.</p>`
+        html: `<p>YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok and other linked services apply their own terms, availability and policies. A link does not imply control of or responsibility for the external service.</p>`
       },
       {
-        title: "Updated",
+        title: "Last updated",
         html: `<p><small>Last updated: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ]
   });
   return basePage({
     title: isEs ? "Aviso legal | BladesBeats" : "Legal notice | BladesBeats",
-    description: isEs ? "Aviso legal de BladesBeats, sitio oficial de artista, DJ y productor basado en Sevilla." : "Legal notice for BladesBeats, the official artist website for the Sevilla-based DJ and producer.",
+    description: isEs ? "Información sobre quién gestiona bladesbeats.com, el uso de su contenido y los datos de contacto de BladesBeats." : "Information about who operates bladesbeats.com, how its content may be used, and how to contact BladesBeats.",
     canonical: isEs ? PAGE_ALTERNATES.legalNotice.es : PAGE_ALTERNATES.legalNotice.en,
     label: "Legal",
     h1: isEs ? "Aviso legal" : "Legal notice",
-    intro: isEs ? "Sitio oficial y datos de contacto de BladesBeats." : "Official site and contact details for BladesBeats.",
+    intro: isEs ? "Quién gestiona este sitio, cómo puede utilizarse su contenido y dónde se encuentra el contacto." : "Who runs this artist website, how its content may be used, and where contact details can be found.",
     activeNav: "",
     lang,
     alternates: PAGE_ALTERNATES.legalNotice,
@@ -2380,76 +3114,98 @@ function buildLegalPrivacyPage(lang = "en") {
     sections: isEs ? [
       {
         title: "Responsable",
-        html: `<p><strong>Identidad pública:</strong> ${escapeHtml(legal.tradeName)}</p>
-    <p><strong>Contacto privacidad:</strong> ${mailtoLegalLink(legal)}</p>`
+        html: `<p><strong>Responsable:</strong> la persona física que utiliza ${escapeHtml(legal.tradeName)} como nombre artístico, con base en Sevilla, España.</p>
+    <p><strong>Contacto de privacidad:</strong> ${mailtoLegalLink(legal)}</p>
+    <p>BladesBeats no es una sociedad mercantil. La identificación pública disponible se recoge en el <a href="/aviso-legal/">aviso legal</a>.</p>`
       },
       {
-        title: "Datos",
-        html: `<p>El sitio no tiene formulario. Se tratan los datos que envías voluntariamente por correo, Instagram u otra plataforma enlazada: nombre o usuario, datos de contacto, mensaje y contexto de la consulta.</p>
-    <p>El alojamiento puede generar registros técnicos básicos, como IP, fecha, navegador y página solicitada, para seguridad y funcionamiento.</p>`
+        title: "Datos tratados",
+        html: `<p>El formulario recoge nombre, correo electrónico, motivo de contacto y mensaje. Según la solicitud, también puedes facilitar fecha y lugar del evento, presupuesto, enlaces musicales, datos de colaboración o información necesaria para una solicitud de derechos o privacidad.</p>
+    <p>El alojamiento, Cloudflare y el formulario pueden tratar datos técnicos como dirección IP, fecha y hora, navegador, página solicitada, resultado de Turnstile y señales de seguridad. Si se detecta un patrón malicioso y está activa la lista de bloqueo, se conserva durante una hora una clave seudonimizada derivada de la IP.</p>
+    <p>También se tratan los datos que decidas enviar por correo, Instagram u otra plataforma externa.</p>`
       },
       {
-        title: "Finalidad",
-        html: `<p>Responder mensajes, gestionar consultas de contratación o colaboración, mantener la seguridad del sitio y conservar prueba de una comunicación cuando sea necesario.</p>`
+        title: "Finalidades y bases jurídicas",
+        html: `<p><strong>Consultas generales y colaboraciones:</strong> responder a tu solicitud. La base es la gestión de la petición que has iniciado.</p>
+    <p><strong>Contratación:</strong> valorar disponibilidad y preparar una posible contratación. La base son las medidas precontractuales solicitadas por ti.</p>
+    <p><strong>Solicitudes de derechos, privacidad o retirada:</strong> comprobar y gestionar la solicitud, cumplir obligaciones aplicables y conservar prueba cuando sea necesario.</p>
+    <p><strong>Seguridad:</strong> prevenir spam, fraude y abuso del formulario. La base es el interés legítimo en proteger el sitio y sus comunicaciones.</p>
+    <p>Enviar el formulario no te suscribe a marketing ni autoriza comunicaciones promocionales.</p>`
       },
       {
-        title: "Base jurídica",
-        html: `<p>Solicitud de la persona interesada, medidas precontractuales si hay una consulta de contratación, interés legítimo para seguridad y prevención de abusos, y consentimiento cuando proceda.</p>`
-      },
-      {
-        title: "Destinatarios",
-        html: `<p>El sitio está alojado en ${escapeHtml(legal.hostingProvider)}. El correo y las plataformas externas usadas para contactar o escuchar música aplican sus propias políticas cuando se utilizan.</p>`
+        title: "Proveedores y transferencias",
+        html: `<p>${escapeHtml(legal.hostingProvider)} aloja el sitio. Cloudflare presta Turnstile y funciones de seguridad. Resend transmite el contenido del formulario al proveedor del buzón de contacto. Estos proveedores actúan como encargados o proveedores técnicos según el servicio.</p>
+    <p>Cloudflare y Resend pueden tratar datos fuera del Espacio Económico Europeo. Cuando corresponde, sus transferencias se apoyan en decisiones de adecuación, cláusulas contractuales tipo u otras garantías reconocidas por el RGPD. Puedes pedir información sobre estas garantías mediante el contacto de privacidad.</p>
+    <p>El sitio no mantiene una base de datos independiente con los mensajes del formulario. Si eliges Instagram, YouTube, Spotify, Apple Music, Mixcloud, TikTok u otra plataforma, esa plataforma tratará los datos conforme a su propia política.</p>`
       },
       {
         title: "Conservación",
-        html: `<p>Los mensajes se eliminan cuando la consulta queda cerrada, salvo que sea necesario conservarlos para seguimiento, prevención de fraude o abuso, defensa ante reclamaciones u obligación aplicable.</p>`
+        html: `<p>Las consultas ordinarias se revisan y eliminan como máximo dentro de los 12 meses posteriores a su cierre, salvo que solicites antes su supresión.</p>
+    <p>Los mensajes vinculados a una contratación, reclamación, solicitud de derechos o posible obligación legal se conservan solo durante el plazo necesario para gestionar el asunto y atender responsabilidades aplicables. Los registros técnicos siguen los plazos de seguridad del proveedor. La clave temporal de bloqueo, cuando se utiliza, caduca después de una hora.</p>`
       },
       {
         title: "Derechos",
-        html: `<p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación, portabilidad y retirada del consentimiento cuando proceda. También puedes reclamar ante la Agencia Española de Protección de Datos.</p>
+        html: `<p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación y portabilidad, así como retirar el consentimiento cuando sea la base aplicable. Envía la solicitud al contacto de privacidad e indica el derecho que deseas ejercer. Solo se pedirá información adicional cuando sea necesaria para verificar la identidad y evitar entregar datos a otra persona.</p>
+    <p>También puedes presentar una reclamación ante la <a href="https://www.aepd.es/" target="_blank" rel="noopener noreferrer">Agencia Española de Protección de Datos</a>.</p>`
+      },
+      {
+        title: "Campos obligatorios y decisiones automatizadas",
+        html: `<p>Nombre, correo electrónico, motivo de contacto y mensaje son necesarios para tramitar el formulario. Sin ellos no es posible responder. Los demás campos son opcionales salvo que el propio tipo de solicitud indique que son necesarios para verificarla.</p>
+    <p>No se realizan perfiles, decisiones automatizadas ni cesiones de datos para publicidad.</p>
     <p><small>Última actualización: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ] : [
       {
         title: "Controller",
-        html: `<p><strong>Public identity:</strong> ${escapeHtml(legal.tradeName)}</p>
-    <p><strong>Privacy contact:</strong> ${mailtoLegalLink(legal, "email contact")}</p>`
+        html: `<p><strong>Controller:</strong> the individual using ${escapeHtml(legal.tradeName)} as an artist name, based in Sevilla, Spain.</p>
+    <p><strong>Privacy contact:</strong> ${mailtoLegalLink(legal, "email BladesBeats")}</p>
+    <p>BladesBeats is not a registered company. The available public identification appears in the <a href="/legal-notice/">legal notice</a>.</p>`
       },
       {
-        title: "Data",
-        html: `<p>The site has no contact form. Data handled is what you voluntarily send by email, Instagram or another linked platform: name or username, contact details, message and inquiry context.</p>
-    <p>The host may generate basic technical logs, such as IP address, date, browser and requested page, for security and operation.</p>`
+        title: "Data we handle",
+        html: `<p>The form collects your name, email address, inquiry type, and message. Depending on the request, you may also provide an event date and location, budget, music links, collaboration details, or information needed for a rights or privacy request.</p>
+    <p>The host, Cloudflare, and the form service may process technical data such as IP address, date and time, browser, requested page, Turnstile result, and security signals. If a malicious pattern is detected and the blocklist is enabled, a pseudonymised key derived from the IP address is retained for one hour.</p>
+    <p>Information you choose to send by email, Instagram, or another external platform is also handled.</p>`
       },
       {
-        title: "Purpose",
-        html: `<p>Replying to messages, handling booking or collaboration inquiries, keeping the site secure and keeping proof of a communication when needed.</p>`
+        title: "Purposes and legal bases",
+        html: `<p><strong>General inquiries and collaborations:</strong> to answer the request you initiated.</p>
+    <p><strong>Bookings:</strong> to check availability and prepare a possible engagement. The basis is the pre-contractual steps you request.</p>
+    <p><strong>Rights, privacy, or takedown requests:</strong> to verify and handle the request, meet applicable duties, and retain evidence where necessary.</p>
+    <p><strong>Security:</strong> to prevent spam, fraud, and form abuse. The basis is the legitimate interest in protecting the website and its communications.</p>
+    <p>Submitting the form does not subscribe you to marketing or authorise promotional messages.</p>`
       },
       {
-        title: "Legal basis",
-        html: `<p>The person's request, pre-contractual steps for booking inquiries, legitimate interest for security and abuse prevention, and consent where applicable.</p>`
-      },
-      {
-        title: "Recipients",
-        html: `<p>The site is hosted by ${escapeHtml(legal.hostingProvider)}. Email and external platforms used for contact or music access apply their own policies when used.</p>`
+        title: "Providers and transfers",
+        html: `<p>${escapeHtml(legal.hostingProvider)} hosts the website. Cloudflare provides Turnstile and security functions. Resend transmits the form content to the contact mailbox provider. These companies act as processors or technical providers according to the service involved.</p>
+    <p>Cloudflare and Resend may process data outside the European Economic Area. Where applicable, their transfers rely on adequacy decisions, Standard Contractual Clauses, or another safeguard recognised by the GDPR. You can request information about these safeguards through the privacy contact.</p>
+    <p>The website does not maintain a separate form-message database. If you choose Instagram, YouTube, Spotify, Apple Music, Mixcloud, TikTok, or another platform, that platform handles data under its own policy.</p>`
       },
       {
         title: "Retention",
-        html: `<p>Messages are deleted when the inquiry is closed, unless they need to be kept for follow-up, fraud or abuse prevention, defense against claims, or an applicable obligation.</p>`
+        html: `<p>Routine inquiries are reviewed and deleted no later than 12 months after they are closed, unless you request earlier deletion.</p>
+    <p>Messages connected with a booking, claim, rights request, or possible legal duty are kept only as long as necessary to handle the matter and meet applicable responsibilities. Technical logs follow the provider's security schedule. The temporary block key, when used, expires after one hour.</p>`
       },
       {
         title: "Rights",
-        html: `<p>You may request access, rectification, deletion, objection, restriction, portability and withdrawal of consent where applicable. You may also complain to the Spanish Data Protection Agency.</p>
+        html: `<p>You may request access, rectification, deletion, objection, restriction, and portability, and withdraw consent where consent is the applicable basis. Email the privacy contact and identify the right you want to exercise. Additional information will only be requested when needed to verify identity and avoid disclosing data to someone else.</p>
+    <p>You may also complain to the <a href="https://www.aepd.es/" target="_blank" rel="noopener noreferrer">Spanish Data Protection Agency</a>.</p>`
+      },
+      {
+        title: "Required fields and automated decisions",
+        html: `<p>Name, email address, inquiry type, and message are required to process the form. Without them, a reply is not possible. Other fields are optional unless the selected request explains that information is needed for verification.</p>
+    <p>There is no profiling, automated decision-making, or disclosure of form data for advertising.</p>
     <p><small>Last updated: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ]
   });
   return basePage({
     title: isEs ? "Política de privacidad | BladesBeats" : "Privacy policy | BladesBeats",
-    description: isEs ? "Política de privacidad de BladesBeats para contacto, booking y colaboraciones." : "Privacy policy for BladesBeats contact, booking and collaboration inquiries.",
+    description: isEs ? "Información sobre los datos que trata BladesBeats al recibir mensajes, por qué se utilizan, cuánto tiempo se conservan y los derechos disponibles." : "Information about the data BladesBeats handles for messages, why it is used, how long it is kept, and the rights available.",
     canonical: isEs ? PAGE_ALTERNATES.privacy.es : PAGE_ALTERNATES.privacy.en,
     label: "Legal",
     h1: isEs ? "Política de privacidad" : "Privacy policy",
-    intro: isEs ? "Cómo se gestionan mensajes de contacto y booking." : "How contact and booking messages are handled.",
+    intro: isEs ? "Qué ocurre con los datos que envías mediante el formulario, el correo o las plataformas enlazadas." : "What happens to data you send through the contact form, email, or linked platforms.",
     activeNav: "",
     lang,
     alternates: PAGE_ALTERNATES.privacy,
@@ -2465,53 +3221,69 @@ function buildLegalCookiePage(lang = "en") {
     current: "cookies",
     sections: isEs ? [
       {
-        title: "Uso actual",
-        html: `<p>En la última actualización, bladesbeats.com no carga scripts de Google Analytics, Google Tag Manager, Meta Pixel o TikTok Pixel desde el HTML.</p>
-    <p>No hay tienda online ni formulario de contacto.</p>`
+        title: "Configuración por defecto",
+        html: `<p>bladesbeats.com no utiliza Google Analytics, Google Tag Manager, Meta Pixel, TikTok Pixel ni cookies de publicidad o analítica.</p>
+    <p>Las fuentes y portadas del catálogo se sirven desde bladesbeats.com. La navegación y el selector de idioma no guardan preferencias en cookies ni en almacenamiento local.</p>`
       },
       {
-        title: "Almacenamiento local",
-        html: `<p><strong>bb_lang:</strong> guarda la preferencia EN/ES en el navegador. Sirve solo para recordar el idioma elegido. Permanece hasta que el visitante borre los datos del navegador.</p>`
+        title: "Contacto y seguridad",
+        html: `<p>Las páginas de contacto cargan Cloudflare Turnstile para comprobar que el envío es legítimo y proteger el formulario. Cloudflare puede tratar la dirección IP, características del navegador, señales de seguridad y usar almacenamiento estrictamente necesario para la verificación.</p>
+    <p>Turnstile se utiliza únicamente para seguridad, no para publicidad ni medición de audiencia. Por su carácter necesario para proteger el formulario, no se ofrece como una categoría opcional.</p>`
       },
       {
-        title: "Mixcloud",
-        html: `<p>Los reproductores de Mixcloud no se cargan automáticamente. Se abren solo cuando el visitante pulsa el botón del reproductor. Desde ese momento, Mixcloud aplica sus propias cookies y políticas.</p>`
+        title: "YouTube y Mixcloud",
+        html: `<p>Los reproductores de YouTube y Mixcloud permanecen desconectados hasta que pulsas el botón para cargarlos. YouTube utiliza el dominio de privacidad mejorada youtube-nocookie.com.</p>
+    <p>Al cargar un reproductor, el navegador conecta con el proveedor elegido. Desde ese momento el proveedor puede tratar datos técnicos y utilizar cookies o almacenamiento conforme a su propia política.</p>`
       },
       {
-        title: "Gestión",
-        html: `<p>Para borrar la preferencia de idioma, elimina los datos del sitio en el navegador. Si se añaden analítica, publicidad, píxeles o cookies no esenciales, se deberá actualizar esta política y la gestión de consentimiento antes de usarlos.</p>
+        title: "Enlaces externos",
+        html: `<p>Los enlaces a YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok y otros servicios no cargan sus reproductores o aplicaciones dentro del sitio. Al seguir el enlace abandonas bladesbeats.com y se aplica la política del servicio elegido.</p>`
+      },
+      {
+        title: "Control",
+        html: `<p>Puedes evitar cualquier conexión opcional sin cargar los reproductores. Si ya has cargado uno, puedes eliminar sus cookies o datos desde la configuración del navegador y volver a la página sin pulsar el botón.</p>
+    <p>Si en el futuro se añaden cookies no esenciales, analítica o publicidad, se mostrará una elección previa con opciones de aceptar, rechazar y configurar antes de activarlas.</p>
     <p>Para consultas sobre cookies o privacidad, utiliza este ${mailtoLegalLink(legal)}.</p>
     <p><small>Última actualización: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ] : [
       {
-        title: "Current use",
-        html: `<p>As of the last update, bladesbeats.com does not load Google Analytics, Google Tag Manager, Meta Pixel or TikTok Pixel scripts from the HTML.</p>
-    <p>There is no online shop or contact form.</p>`
+        title: "Default setup",
+        html: `<p>bladesbeats.com does not use Google Analytics, Google Tag Manager, Meta Pixel, TikTok Pixel, or advertising or analytics cookies.</p>
+    <p>Fonts and catalogue artwork are served by bladesbeats.com. Navigation and the language selector do not store preferences in cookies or local storage.</p>`
       },
       {
-        title: "Local storage",
-        html: `<p><strong>bb_lang:</strong> stores the EN/ES preference in the browser. It is only used to remember the selected language. It remains until the visitor clears browser site data.</p>`
+        title: "Contact and security",
+        html: `<p>Contact pages load Cloudflare Turnstile to verify that a submission is legitimate and protect the form. Cloudflare may process the IP address, browser characteristics, security signals, and storage strictly necessary for verification.</p>
+    <p>Turnstile is used only for security, not advertising or audience measurement. Because it is necessary to protect the form, it is not presented as an optional category.</p>`
       },
       {
-        title: "Mixcloud",
-        html: `<p>Mixcloud players do not load automatically. They open only when the visitor presses the player button. From that point, Mixcloud applies its own cookies and policies.</p>`
+        title: "YouTube and Mixcloud",
+        html: `<p>YouTube and Mixcloud players stay disconnected until you press the button to load them. YouTube uses its privacy-enhanced youtube-nocookie.com domain.</p>
+    <p>Loading a player connects the browser to the chosen provider. From that point, the provider may handle technical data and use cookies or storage under its own policy.</p>`
+      },
+      {
+        title: "External links",
+        html: `<p>Links to YouTube, Spotify, Apple Music, Mixcloud, Instagram, TikTok, and other services do not load their players or applications inside the website. Following a link leaves bladesbeats.com and the selected service's policy applies.</p>`
       },
       {
         title: "Control",
-        html: `<p>To clear the language preference, delete site data in the browser. If analytics, advertising, pixels or non-essential cookies are added, this policy and consent handling must be updated before they are used.</p>
-    <p>For cookie or privacy questions, use this ${mailtoLegalLink(legal, "email contact")}.</p>
+        html: `<p>You can avoid every optional connection by not loading the players. If you already loaded one, you can remove its cookies or data in your browser settings and return to the page without pressing the button.</p>
+    <p>If non-essential cookies, analytics, or advertising are added in the future, a prior choice with accept, reject, and settings options will be provided before they are activated.</p>
+    <p>For cookie or privacy questions, ${mailtoLegalLink(legal, "email BladesBeats")}.</p>
     <p><small>Last updated: ${escapeHtml(legal.lastUpdated)}</small></p>`
       }
     ]
   });
   return basePage({
     title: isEs ? "Política de cookies | BladesBeats" : "Cookie policy | BladesBeats",
-    description: isEs ? "Política de cookies de BladesBeats." : "Cookie policy for BladesBeats.",
+    description: isEs
+      ? "Información sobre cuándo bladesbeats.com conecta con Cloudflare, YouTube o Mixcloud y qué almacenamiento puede utilizarse."
+      : "Information about when bladesbeats.com connects to Cloudflare, YouTube, or Mixcloud and which storage may be used.",
     canonical: isEs ? PAGE_ALTERNATES.cookies.es : PAGE_ALTERNATES.cookies.en,
     label: "Legal",
     h1: isEs ? "Política de cookies" : "Cookie policy",
-    intro: isEs ? "Cookies y almacenamiento local usados en bladesbeats.com." : "Cookies and local storage used on bladesbeats.com.",
+    intro: isEs ? "Qué servicios externos pueden almacenar datos, cuándo se conectan y cómo mantiene el sitio el control." : "Which external services may store data, when they connect, and how the site keeps that under control.",
     activeNav: "",
     lang,
     alternates: PAGE_ALTERNATES.cookies,
@@ -2535,11 +3307,21 @@ function validatePageHtml(html, label) {
 
 function validateHomepage() {
   const html = readText("index.html");
+  const latestReleaseUrl = latestCatalogEvent(validCatalogEvents(), "release")?.url || "/music/";
   if (/data-i18n="cta_spotify"|Listen on Spotify|Escuchar en Spotify/.test(html)) {
     throw new Error("Homepage hero CTA still implies Spotify exclusivity.");
   }
-  if (!/href="#listen"[^>]+data-i18n="home_hero_cta"/.test(html)) {
-    throw new Error("Homepage hero CTA does not point to the listen anchor.");
+  if (!html.includes(`href="${escapeAttr(latestReleaseUrl)}" data-i18n="home_hero_cta"`)) {
+    throw new Error(`Homepage hero CTA does not point to the latest release (${latestReleaseUrl}).`);
+  }
+  if (!/<a class="site-nav-lang" href="\/es\/" hreflang="es"/.test(html)) {
+    throw new Error("Homepage language control does not link to the Spanish URL.");
+  }
+  if (/data-lang-switch|localStorage|const COPY =|data-page="(?:releases|appearances|story|booking)"/.test(html)) {
+    throw new Error("Homepage still contains legacy client-side routing or language code.");
+  }
+  if (/data-contact-form|api\.ipify\.org|challenges\.cloudflare\.com\/turnstile/.test(html)) {
+    throw new Error("Homepage still contains hidden contact-form dependencies.");
   }
   if (!/<canvas id="catalog-canvas"/.test(html)) {
     throw new Error("Homepage catalog canvas missing.");
@@ -2547,10 +3329,10 @@ function validateHomepage() {
   if (!/<script id="catalog-data" type="application\/json">/.test(html)) {
     throw new Error("Homepage catalog data block missing.");
   }
-  if (!/<script defer src="\/assets\/js\/catalog-hero\.js"><\/script>/.test(html)) {
+  if (!/<script defer src="\/assets\/js\/catalog-hero\.js\?v=[a-f0-9]{12}"><\/script>/.test(html)) {
     throw new Error("Homepage catalog hero script missing.");
   }
-  for (const label of ["Spotify", "Apple Music", "Mixcloud", "YouTube", "Instagram", "TikTok"]) {
+  for (const label of ["YouTube", "Spotify", "Apple Music", "Mixcloud", "Instagram", "TikTok"]) {
     if (!html.includes(label)) throw new Error(`Homepage platform section missing ${label}.`);
   }
   const jsonMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
@@ -2577,8 +3359,10 @@ function buildSitemap(entries) {
 }
 
 function main() {
-  const releases = readJson("data/releases.json").filter((release) => !isExcludedRelease(release));
-  const sets = readJson("data/dj-sets.json");
+  const releases = readJson("data/releases.json")
+    .filter((release) => !isExcludedRelease(release))
+    .map((release) => cachedCatalogImage(release, "releases"));
+  const sets = readJson("data/dj-sets.json").map((set) => cachedCatalogImage(set, "sets"));
   const gigs = readJson("data/gigs.json");
   validateUniqueSlugs(releases, "Release");
   validateUniqueSlugs(sets, "DJ set");
@@ -2594,10 +3378,13 @@ function main() {
   const musicFilesEs = [];
   const setFiles = [];
   const setFilesEs = [];
+  const catalogLastmod = pageLastmod(
+    releases.map((item) => item.lastmod || item.releaseDate),
+    sets.map((item) => item.lastmod || item.uploadDate || item.publishedDate),
+    gigs.map((item) => item.lastmod || item.startDate)
+  );
   const sitemap = [
-    { loc: `${SITE}/`, lastmod: BUILD_DATE },
-    { loc: `${SITE}/llms.txt`, lastmod: fileLastmod("llms.txt") },
-    { loc: `${SITE}/llms-full.txt`, lastmod: fileLastmod("llms-full.txt") }
+    { loc: `${SITE}/`, lastmod: catalogLastmod }
   ];
 
   for (const release of releases) {
@@ -2605,14 +3392,15 @@ function main() {
     const urlEs = releaseDetailUrl(release.slug, "es");
     generatedReleaseUrls.set(release.slug, url);
     generatedReleaseUrlsEs.set(release.slug, urlEs);
-    const html = buildReleasePage(release, "en");
-    const htmlEs = buildReleasePage(release, "es");
+    const html = buildReleasePage(release, "en", releases);
+    const htmlEs = buildReleasePage(release, "es", releases);
     validatePageHtml(html, `music/${release.slug}`);
     validatePageHtml(htmlEs, `es/musica/${release.slug}`);
     musicFiles.push([path.join(release.slug, "index.html"), html]);
     musicFilesEs.push([path.join(release.slug, "index.html"), htmlEs]);
-    sitemap.push({ loc: url, lastmod: release.lastmod || BUILD_DATE });
-    sitemap.push({ loc: urlEs, lastmod: release.lastmod || BUILD_DATE });
+    const lastmod = pageLastmod(release.lastmod || release.releaseDate);
+    sitemap.push({ loc: url, lastmod });
+    sitemap.push({ loc: urlEs, lastmod });
   }
 
   for (const set of sets) {
@@ -2630,8 +3418,9 @@ function main() {
     validatePageHtml(htmlEs, `es/sesiones/${set.slug}`);
     setFiles.push([path.join(set.slug, "index.html"), html]);
     setFilesEs.push([path.join(set.slug, "index.html"), htmlEs]);
-    sitemap.push({ loc: url, lastmod: set.lastmod || BUILD_DATE });
-    sitemap.push({ loc: urlEs, lastmod: set.lastmod || BUILD_DATE });
+    const lastmod = pageLastmod(set.lastmod || set.uploadDate || set.publishedDate);
+    sitemap.push({ loc: url, lastmod });
+    sitemap.push({ loc: urlEs, lastmod });
   }
 
   for (const gig of gigs) {
@@ -2643,43 +3432,47 @@ function main() {
     validatePageHtml(htmlEs, `es/eventos/${gig.slug}`);
     gigFiles.push([path.join("gigs", gig.slug, "index.html"), html]);
     gigFilesEs.push([path.join("es", "eventos", gig.slug, "index.html"), htmlEs]);
-    sitemap.push({ loc: url, lastmod: BUILD_DATE });
-    sitemap.push({ loc: urlEs, lastmod: BUILD_DATE });
+    const lastmod = pageLastmod(gig.lastmod || gig.startDate);
+    sitemap.push({ loc: url, lastmod });
+    sitemap.push({ loc: urlEs, lastmod });
   }
 
   const musicIndex = buildMusicIndex(releases, generatedReleaseUrls, sets);
   validatePageHtml(musicIndex, "music index");
   musicFiles.unshift(["index.html", musicIndex]);
-  sitemap.splice(1, 0, { loc: `${SITE}/music/`, lastmod: dateMax(releases.map((item) => item.lastmod)) });
+  const releasesLastmod = pageLastmod(releases.map((item) => item.lastmod || item.releaseDate));
+  sitemap.splice(1, 0, { loc: `${SITE}/music/`, lastmod: releasesLastmod });
 
   const setIndex = buildSetIndex(sets, generatedSetUrls, "en");
   validatePageHtml(setIndex, "dj-sets index");
   setFiles.unshift(["index.html", setIndex]);
-  sitemap.splice(2, 0, { loc: `${SITE}/dj-sets/`, lastmod: dateMax(sets.map((item) => item.lastmod)) });
+  const setsLastmod = pageLastmod(sets.map((item) => item.lastmod || item.uploadDate || item.publishedDate));
+  sitemap.splice(2, 0, { loc: `${SITE}/dj-sets/`, lastmod: setsLastmod });
 
-  injectCatalogDataIntoHomepage();
+  injectCatalogDataIntoHomepage(releases, sets);
+  updateStandaloneAssetVersions();
   validateHomepage();
+  const gigsLastmod = pageLastmod(gigs.map((item) => item.lastmod || item.startDate));
   const staticPages = [
-    ["about/index.html", buildAboutPageDesign("en"), `${SITE}/about/`],
-    ["booking/index.html", buildBookingPage("en"), `${SITE}/booking/`],
-    ["gigs/index.html", buildGigsIndexPage(gigs, "en"), `${SITE}/gigs/`],
-    ["dj-toolkit/index.html", buildDjToolkitPage(), `${SITE}/dj-toolkit/`],
-    ["legal-notice/index.html", buildLegalNoticePage("en"), `${SITE}/legal-notice/`],
-    ["privacy-policy/index.html", buildLegalPrivacyPage("en"), `${SITE}/privacy-policy/`],
-    ["cookie-policy/index.html", buildLegalCookiePage("en"), `${SITE}/cookie-policy/`],
-    ["aviso-legal/index.html", buildLegalNoticePage("es"), `${SITE}/aviso-legal/`],
-    ["politica-privacidad/index.html", buildLegalPrivacyPage("es"), `${SITE}/politica-privacidad/`],
-    ["politica-cookies/index.html", buildLegalCookiePage("es"), `${SITE}/politica-cookies/`],
-    ["es/index.html", buildSpanishHomePage(releases, generatedReleaseUrls, sets, gigs), `${SITE}/es/`],
-    ["es/contratar-dj-sevilla/index.html", buildBookingPage("es"), `${SITE}/es/contratar-dj-sevilla/`],
-    ["es/musica/index.html", buildSpanishMusicPage(releases, generatedReleaseUrlsEs, sets), `${SITE}/es/musica/`],
-    ["es/sesiones/index.html", buildSetIndex(sets, generatedSetUrlsEs, "es"), `${SITE}/es/sesiones/`],
-    ["es/eventos/index.html", buildGigsIndexPage(gigs, "es"), `${SITE}/es/eventos/`],
-    ["es/sobre-bladesbeats/index.html", buildAboutPageDesign("es"), `${SITE}/es/sobre-bladesbeats/`]
+    ["about/index.html", buildAboutPageDesign("en"), `${SITE}/about/`, SITE_TEMPLATE_LASTMOD],
+    ["booking/index.html", buildBookingPage("en"), `${SITE}/booking/`, SITE_TEMPLATE_LASTMOD],
+    ["gigs/index.html", buildGigsIndexPage(gigs, "en"), `${SITE}/gigs/`, gigsLastmod],
+    ["legal-notice/index.html", buildLegalNoticePage("en"), `${SITE}/legal-notice/`, SITE_TEMPLATE_LASTMOD],
+    ["privacy-policy/index.html", buildLegalPrivacyPage("en"), `${SITE}/privacy-policy/`, SITE_TEMPLATE_LASTMOD],
+    ["cookie-policy/index.html", buildLegalCookiePage("en"), `${SITE}/cookie-policy/`, SITE_TEMPLATE_LASTMOD],
+    ["aviso-legal/index.html", buildLegalNoticePage("es"), `${SITE}/aviso-legal/`, SITE_TEMPLATE_LASTMOD],
+    ["politica-privacidad/index.html", buildLegalPrivacyPage("es"), `${SITE}/politica-privacidad/`, SITE_TEMPLATE_LASTMOD],
+    ["politica-cookies/index.html", buildLegalCookiePage("es"), `${SITE}/politica-cookies/`, SITE_TEMPLATE_LASTMOD],
+    ["es/index.html", buildSpanishHomePage(releases, generatedReleaseUrls, sets, gigs), `${SITE}/es/`, catalogLastmod],
+    ["es/contratar-dj-sevilla/index.html", buildBookingPage("es"), `${SITE}/es/contratar-dj-sevilla/`, SITE_TEMPLATE_LASTMOD],
+    ["es/musica/index.html", buildSpanishMusicPage(releases, generatedReleaseUrlsEs, sets), `${SITE}/es/musica/`, releasesLastmod],
+    ["es/sesiones/index.html", buildSetIndex(sets, generatedSetUrlsEs, "es"), `${SITE}/es/sesiones/`, setsLastmod],
+    ["es/eventos/index.html", buildGigsIndexPage(gigs, "es"), `${SITE}/es/eventos/`, gigsLastmod],
+    ["es/sobre-bladesbeats/index.html", buildAboutPageDesign("es"), `${SITE}/es/sobre-bladesbeats/`, SITE_TEMPLATE_LASTMOD]
   ];
-  for (const [relative, html, loc] of staticPages) {
+  for (const [relative, html, loc, lastmod] of staticPages) {
     validatePageHtml(html, relative);
-    sitemap.push({ loc, lastmod: BUILD_DATE });
+    sitemap.push({ loc, lastmod });
   }
   const sitemapXml = buildSitemap(sitemap);
   if ((sitemapXml.match(/<loc>/g) || []).length !== sitemap.length) {
