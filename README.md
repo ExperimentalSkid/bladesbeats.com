@@ -38,4 +38,12 @@ Use `npm run catalog:refresh` only when intentionally refreshing the approved so
 
 The reviewed Nginx configuration serves the immutable release selected by `/srv/bladesbeats/current`. A release requires the explicit `PUBLISH <version>` confirmation in the Release Desk.
 
+## SEO launch checklist
+
+- Keep the generated route set stable. The validator fails if a URL from the previously published sitemap disappears without a redirect plan.
+- After publishing a meaningful update, submit `https://bladesbeats.com/sitemap.xml` in Google Search Console and inspect `/`, `/es/` and `/es/contratar-dj-sevilla/`. Repeated indexing requests do not make crawling faster.
+- Maintain a verified Google Business Profile for the real service area when applicable. Keep the artist name, website, category, Sevilla service area, photos and public profile links consistent; request genuine reviews without incentives.
+- Keep Spotify, Apple Music, YouTube, Mixcloud, Instagram and TikTok profiles pointing back to the canonical website where each platform allows it. Local press, venue, organiser and collaborator links should use the relevant page rather than a generic homepage when possible.
+- Review Search Console queries, pages, indexing and Core Web Vitals after each release. Improve pages from real impressions and booking questions instead of creating thin city or keyword variants.
+
 VPS setup and operating instructions are in `deploy/OPERATIONS.md`.

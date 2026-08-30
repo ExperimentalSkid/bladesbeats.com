@@ -33,11 +33,24 @@ function validateStructuredImageUrls(value, file) {
   }
   if (!value || typeof value !== "object") return;
   for (const [key, item] of Object.entries(value)) {
-    if (["image", "thumbnailUrl"].includes(key) && typeof item === "string" && !/^https:\/\//.test(item)) {
+    if (["image", "thumbnailUrl", "primaryImageOfPage"].includes(key) && typeof item === "string" && !/^https:\/\//.test(item)) {
       fail(file, `structured-data ${key} must use an absolute HTTPS URL`);
     }
     validateStructuredImageUrls(item, file);
   }
+}
+
+function collectStructuredTypes(value, types = new Set()) {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectStructuredTypes(item, types));
+    return types;
+  }
+  if (!value || typeof value !== "object") return types;
+  const declared = value["@type"];
+  if (Array.isArray(declared)) declared.forEach((type) => types.add(type));
+  else if (declared) types.add(declared);
+  Object.values(value).forEach((item) => collectStructuredTypes(item, types));
+  return types;
 }
 
 function internalTargetExists(url) {
@@ -64,14 +77,17 @@ for (const file of textFiles) {
 const canonicals = new Map();
 for (const file of htmlFiles) {
   const html = fs.readFileSync(file, "utf8");
+  const relative = path.relative(DIST, file).replace(/\\/g, "/");
   if (!/^<!doctype html>/i.test(html)) fail(file, "missing HTML doctype");
   if (!/<html lang="(?:en|es)">/.test(html)) fail(file, "missing supported document language");
   if (!/<title>[^<]{3,}[^<]*<\/title>/.test(html)) fail(file, "missing title");
   if (!/<meta name="description" content="[^"]{20,}">/.test(html)) fail(file, "missing useful meta description");
   if (!/<meta name="robots" content="[^"]+">/.test(html)) fail(file, "missing robots directive");
+  if (/<meta name="keywords"/i.test(html)) fail(file, "contains obsolete keyword metadata");
   if (!/<meta name="referrer" content="no-referrer">/.test(html)) fail(file, "missing privacy-preserving referrer policy");
   if (!/<meta property="og:image:alt" content="[^"]+">/.test(html)) fail(file, "missing Open Graph image alt text");
   if (!/<meta name="twitter:image:alt" content="[^"]+">/.test(html)) fail(file, "missing social image alt text");
+  if (!/<link rel="icon" type="image\/png" sizes="48x48" href="\/favicon-48\.png">/.test(html)) fail(file, "missing stable 48px search favicon");
   const h1Count = (html.match(/<h1\b/g) || []).length;
   if (h1Count !== 1) fail(file, `expected exactly one h1, found ${h1Count}`);
   if (!/<a class="skip-link" href="#main">/.test(html) || !/<main id="main">/.test(html)) fail(file, "missing skip-link/main landmark pair");
@@ -91,12 +107,21 @@ for (const file of htmlFiles) {
   for (const coreAsset of ["/assets/css/fonts.css", "/assets/css/tokens.css", "/assets/css/site.css", "/assets/js/site.js"]) {
     if (!html.includes(`${coreAsset}?v=`)) fail(file, `missing versioned reference to ${coreAsset}`);
   }
+  const structuredTypes = new Set();
   for (const match of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
-    try { validateStructuredImageUrls(JSON.parse(match[1]), file); } catch (error) { fail(file, `invalid JSON-LD: ${error.message}`); }
+    try {
+      const data = JSON.parse(match[1]);
+      validateStructuredImageUrls(data, file);
+      collectStructuredTypes(data, structuredTypes);
+    } catch (error) { fail(file, `invalid JSON-LD: ${error.message}`); }
   }
   const canonical = html.match(/<link rel="canonical" href="([^"]+)">/)?.[1];
+  const robots = html.match(/<meta name="robots" content="([^"]+)">/)?.[1] || "";
   if (!canonical || !canonical.startsWith(SITE)) fail(file, "missing first-party canonical URL");
-  else if (!/noindex/.test(html.match(/<meta name="robots" content="([^"]+)">/)?.[1] || "")) {
+  else if (!/noindex/.test(robots)) {
+    for (const preview of ["max-image-preview:large", "max-snippet:-1", "max-video-preview:-1"]) {
+      if (!robots.includes(preview)) fail(file, `indexable page is missing ${preview}`);
+    }
     if (canonicals.has(canonical)) fail(file, `duplicate canonical also used by ${canonicals.get(canonical)}`);
     canonicals.set(canonical, path.relative(DIST, file));
     if (!/<link rel="alternate" hreflang="en" href="[^"]+">/.test(html) || !/<link rel="alternate" hreflang="es" href="[^"]+">/.test(html) || !/<link rel="alternate" hreflang="x-default" href="[^"]+">/.test(html)) fail(file, "indexable page is missing complete language alternates");
@@ -111,6 +136,16 @@ for (const file of htmlFiles) {
   if (/\/search(?:[/?"]|$)|open\.spotify\.com\/search/i.test(html)) fail(file, "contains a platform search fallback presented as a destination");
   if (/data-catalog-card[\s\S]*?<h2 class="release-name">/.test(html)) fail(file, "catalogue cards use h2 instead of h3 beneath their group heading");
   if (/data-catalog-count/.test(html) && !/<span role="status" aria-live="polite" aria-atomic="true"><b data-catalog-count>/.test(html)) fail(file, "dynamic catalogue count is not announced to assistive technology");
+  if (relative === "index.html" && (!["WebSite", "Person", "WebPage"].every((type) => structuredTypes.has(type)) || !/DJ in Sevilla/.test(html))) fail(file, "English homepage is missing core local entity signals");
+  if (relative === "es/index.html" && (!["Person", "WebPage"].every((type) => structuredTypes.has(type)) || !/DJ en Sevilla/.test(html))) fail(file, "Spanish homepage is missing core local entity signals");
+  if (["about/index.html", "es/sobre-bladesbeats/index.html"].includes(relative) && !structuredTypes.has("ProfilePage")) fail(file, "artist biography is missing ProfilePage structured data");
+  if (["booking/index.html", "es/contratar-dj-sevilla/index.html"].includes(relative) && (!["ContactPage", "Service", "Person"].every((type) => structuredTypes.has(type)))) fail(file, "booking page is missing local service structured data");
+  const isDetail = /^(?:music|es\/musica|dj-sets|es\/sesiones|gigs|es\/eventos)\/[^/]+\/index\.html$/.test(relative);
+  if (isDetail && !structuredTypes.has("BreadcrumbList")) fail(file, "detail page is missing BreadcrumbList structured data");
+  if (/^(?:music|es\/musica)\/[^/]+\/index\.html$/.test(relative) && !structuredTypes.has("MusicRecording")) fail(file, "release page is missing MusicRecording structured data");
+  if (/data-player-type="video"/.test(html) && !structuredTypes.has("VideoObject")) fail(file, "video release page is missing VideoObject structured data");
+  if (/^(?:dj-sets|es\/sesiones)\/[^/]+\/index\.html$/.test(relative) && !structuredTypes.has("AudioObject")) fail(file, "DJ set page is missing AudioObject structured data");
+  if (/^(?:gigs|es\/eventos)\/[^/]+\/index\.html$/.test(relative) && !structuredTypes.has("Event")) fail(file, "gig page is missing Event structured data");
   if (Buffer.byteLength(html) > 300000) warnings.push(`${path.relative(DIST, file)} exceeds 300 KB`);
 }
 
@@ -125,7 +160,14 @@ const sitemapFile = path.join(DIST, "sitemap.xml");
 if (!fs.existsSync(sitemapFile)) errors.push("sitemap.xml is missing");
 else {
   const sitemap = fs.readFileSync(sitemapFile, "utf8");
+  if (!/xmlns:image="http:\/\/www\.google\.com\/schemas\/sitemap-image\/1\.1"/.test(sitemap)) errors.push("sitemap is missing the Google image namespace");
   const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+  const imageLocations = [...sitemap.matchAll(/<image:loc>([^<]+)<\/image:loc>/g)].map((match) => match[1].replace(/&amp;/g, "&"));
+  if (imageLocations.length < 80) errors.push(`sitemap exposes too few image landing signals: ${imageLocations.length}`);
+  for (const location of imageLocations) {
+    if (!location.startsWith(`${SITE}/`)) errors.push(`image sitemap contains a non-first-party URL: ${location}`);
+    else if (!internalTargetExists(new URL(location).pathname)) errors.push(`image sitemap target is missing: ${location}`);
+  }
   const unique = new Set(locations);
   if (unique.size !== locations.length) errors.push("sitemap contains duplicate URLs");
   for (const location of unique) {
@@ -135,6 +177,11 @@ else {
   }
   for (const canonical of canonicals.keys()) {
     if (!unique.has(canonical)) errors.push(`indexable canonical is missing from sitemap: ${canonical}`);
+  }
+  const legacySitemapFile = path.join(ROOT, "sitemap.xml");
+  if (fs.existsSync(legacySitemapFile)) {
+    const legacy = new Set([...fs.readFileSync(legacySitemapFile, "utf8").matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]));
+    for (const location of legacy) if (!unique.has(location)) errors.push(`previously published sitemap URL was dropped without a redirect plan: ${location}`);
   }
 }
 
