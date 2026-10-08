@@ -1,6 +1,45 @@
 (function () {
   "use strict";
 
+  document.querySelectorAll("[data-current-year]").forEach(function (element) {
+    element.textContent = String(new Date().getFullYear());
+  });
+
+  (function setupMobileNavigation() {
+    const nav = document.querySelector(".site-nav");
+    const toggle = nav && nav.querySelector(".site-nav-toggle");
+    const menu = nav && nav.querySelector(".site-nav-menu");
+    if (!nav || !toggle || !menu) return;
+
+    const mobile = window.matchMedia("(max-width: 720px)");
+    function closeMenu(restoreFocus) {
+      menu.removeAttribute("data-open");
+      toggle.setAttribute("aria-expanded", "false");
+      if (restoreFocus) toggle.focus();
+    }
+    function syncNavigation() {
+      nav.toggleAttribute("data-mobile-nav-ready", mobile.matches);
+      if (!mobile.matches) closeMenu(false);
+    }
+
+    toggle.addEventListener("click", function () {
+      const open = !menu.hasAttribute("data-open");
+      menu.toggleAttribute("data-open", open);
+      toggle.setAttribute("aria-expanded", String(open));
+    });
+    menu.addEventListener("click", function (event) {
+      if (mobile.matches && event.target.closest("a")) closeMenu(false);
+    });
+    document.addEventListener("click", function (event) {
+      if (mobile.matches && menu.hasAttribute("data-open") && !nav.contains(event.target)) closeMenu(false);
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && menu.hasAttribute("data-open")) closeMenu(true);
+    });
+    if (typeof mobile.addEventListener === "function") mobile.addEventListener("change", syncNavigation);
+    syncNavigation();
+  })();
+
   const canvas = document.getElementById("catalog-canvas");
   const dataEl = document.getElementById("catalog-data");
   if (!canvas || !dataEl) return;
@@ -30,11 +69,18 @@
 
   const NOW = Date.now();
   const eventKinds = ["release", "set", "gig"];
-  const events = catalog.events
+  const allEvents = catalog.events
     .filter((event) => event && event.date && event.kind)
     .map((event) => Object.assign({}, event, { dateMs: new Date(event.date).getTime() }))
     .filter((event) => !Number.isNaN(event.dateMs) && eventKinds.includes(event.kind));
-  events.sort((a, b) => a.dateMs - b.dateMs);
+  allEvents.sort((a, b) => a.dateMs - b.dateMs);
+  const compactTimeline = window.matchMedia("(max-width: 720px)").matches;
+  const latestMobileReleases = allEvents.filter((event) => event.kind === "release").slice(-10);
+  const mobileEvents = new Set([
+    ...latestMobileReleases,
+    ...allEvents.filter((event) => event.kind !== "release")
+  ]);
+  const events = compactTimeline ? allEvents.filter((event) => mobileEvents.has(event)) : allEvents;
 
   const DAY = 24 * 60 * 60 * 1000;
   const catalogStart = new Date(catalog.start || "2017-01-01").getTime();
@@ -150,7 +196,7 @@
   function updateCounter() {
     if (!counter) return;
     const activeLang = lang();
-    const counts = events.reduce((all, event) => {
+    const counts = allEvents.reduce((all, event) => {
       all[event.kind] = (all[event.kind] || 0) + 1;
       return all;
     }, {});
@@ -161,8 +207,8 @@
   }
 
   function latestEvent(kind) {
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      if (events[index].kind === kind) return events[index];
+    for (let index = allEvents.length - 1; index >= 0; index -= 1) {
+      if (allEvents[index].kind === kind) return allEvents[index];
     }
     return null;
   }
@@ -215,10 +261,9 @@
   }
 
   function eventY(event, index) {
-    const baseY = height * (width < 560 ? 0.54 : 0.56);
-    const kindOffset = { release: -7, set: -27, gig: 17 }[event.kind] || 0;
-    const laneOffset = ((index % 6) - 2.5) * (width < 560 ? 5 : 6);
-    return baseY - 38 + kindOffset + laneOffset;
+    const centerY = Math.max(78, Math.min(height - 58, height * 0.5));
+    const laneOffset = ((index % 6) - 2.5) * 24;
+    return centerY + laneOffset;
   }
 
   function updatePoints() {
@@ -404,7 +449,17 @@
     requestAnimationFrame(() => positionCard(index));
   }
 
-  function hideCard() {
+  let suppressMarkerActivation = false;
+  let dismissedMarkerIndex = -1;
+
+  function clearMarkerSuppression() {
+    suppressMarkerActivation = false;
+    dismissedMarkerIndex = -1;
+  }
+
+  function hideCard(options) {
+    suppressMarkerActivation = Boolean(options && options.suppressMarkerActivation);
+    dismissedMarkerIndex = suppressMarkerActivation ? activeIndex : -1;
     if (card) card.hidden = true;
     setActiveMarker(-1);
   }
@@ -427,17 +482,26 @@
     button.style.setProperty("--marker-color", kindColors[event.kind] || kindColors.release);
     button.style.setProperty("--marker-glow", kindGlow[event.kind] || kindGlow.release);
     button.setAttribute("aria-label", kindLabel(event.kind) + ": " + (event.title || "BladesBeats") + ", " + formatDate(event));
-    button.addEventListener("mouseenter", () => showCard(index));
-    button.addEventListener("focus", () => showCard(index));
+    button.addEventListener("pointerdown", () => {
+      clearMarkerSuppression();
+    });
+    button.addEventListener("focus", () => {
+      if (suppressMarkerActivation && index === dismissedMarkerIndex) return;
+      clearMarkerSuppression();
+      showCard(index);
+    });
     button.addEventListener("click", (eventObject) => {
       eventObject.preventDefault();
+      clearMarkerSuppression();
       showCard(index);
     });
     hitLayer.appendChild(button);
     return button;
   }) : [];
 
-  if (closeButton) closeButton.addEventListener("click", hideCard);
+  if (closeButton) {
+    closeButton.addEventListener("click", () => hideCard({ suppressMarkerActivation: true }));
+  }
 
   if (card) {
     card.addEventListener("click", (eventObject) => {

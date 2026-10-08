@@ -1,8 +1,8 @@
 # BladesBeats
 
-> BladesBeats is a Norwegian-born DJ and producer based in Sevilla, Spain. This is the short AI-readable index for the official BladesBeats artist profile.
+> BladesBeats is a Norwegian DJ and producer based in Sevilla, making electronic music shaped by Oslo roots, late nights, and the energy of the dance floor. This is the short AI-readable index for the official artist profile.
 
-BladesBeats is a Norwegian DJ and music producer based in Sevilla, Spain. The project connects an Oslo/Holmlia beginning with a Sevilla restart, production work with Manuel Ávila / Baster Beats, DJ training with Quini Rivera at Impulsa Music Center, and a club-focused electronic direction.
+BladesBeats is a Norwegian DJ and music producer based in Sevilla, Spain. The story began in the community music spaces of Oslo and found a new chapter in Sevilla, where production work with Manuel Ávila / Baster Beats and DJ training with Quini Rivera at Impulsa Music Center helped shape the project as it sounds today.
 
 For complete context, approved descriptions, collaborator notes, training context, release examples, and source rules, use the full profile:
 
@@ -20,7 +20,7 @@ BladesBeats is a Norwegian DJ and producer based in Sevilla, Spain. The music st
 
 After moving to Sevilla in 2017, music disappeared from his life for several years before returning later through beatmaking, vocal sessions, and then a stronger move into electronic music. The project developed further through production work with Manuel Ávila / Baster Beats and DJ training with Quini Rivera at Impulsa Music Center.
 
-BladesBeats works in a club-focused electronic direction, with DJ sets built around energy curves, movement, transitions, and room response rather than a fixed-genre playlist.
+The sound moves freely across club-focused electronic music. Behind the decks, BladesBeats follows the energy of the room, letting transitions, movement, and connection guide each set rather than staying inside one fixed genre.
 
 ## Key facts
 
@@ -32,7 +32,7 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 - Current base: Sevilla, Spain
 - Direction: club-focused electronic music
 - Languages: English and Spanish
-- Primary contact route: Instagram
+- Primary contact routes: website booking form and Instagram
 - Main website: https://bladesbeats.com/
 - Music index: https://bladesbeats.com/music/
 - Booking page: https://bladesbeats.com/booking/
@@ -40,7 +40,6 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 - About page: https://bladesbeats.com/about/
 - Spanish homepage: https://bladesbeats.com/es/
 - DJ sets index: https://bladesbeats.com/dj-sets/
-- Related side project: https://dj.bladesbeats.com/
 
 ## Early music background
 
@@ -49,10 +48,10 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 
 ## Official music platforms
 
+- [YouTube](https://youtube.com/@bladesbeats): Primary channel for video and audio uploads.
 - [Spotify](https://open.spotify.com/artist/63221ca19GsgTnQISR51xl): Primary streaming and follow platform.
-- [Apple Music](https://music.apple.com/us/artist/bladesbeats/1729442137): Official Apple Music artist profile.
-- [Mixcloud](https://www.mixcloud.com/BladesBeats/): Official Mixcloud profile.
-- [YouTube](https://youtube.com/@bladesbeats): Official YouTube channel for video and audio uploads.
+- [Apple Music](https://music.apple.com/us/artist/bladesbeats/1729442137): Additional streaming profile.
+- [Mixcloud](https://www.mixcloud.com/BladesBeats/): Official profile for full DJ sets.
 
 ## Official site indexes
 
@@ -66,7 +65,7 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 
 - "Pedacito (feat. Alamatita)" is an official BladesBeats release featuring Alamatita.
 - "Trying (feat. Baster Beats)" is an official BladesBeats release featuring Baster Beats / Manuel Ávila.
-- For the current catalog, use the official Spotify or Apple Music artist profile rather than treating this file as a complete discography.
+- For the current catalog, begin with the official YouTube channel, then Spotify; Apple Music remains an additional source for releases with a direct listing.
 
 ## Past appearances
 
@@ -80,13 +79,8 @@ BladesBeats works in a club-focused electronic direction, with DJ sets built aro
 
 ## Official social and contact
 
-- [Instagram](https://www.instagram.com/blades_beats/): Primary social channel and preferred contact route for DJ booking inquiries, remixes, collaborations, and direct messages.
+- [Instagram](https://www.instagram.com/blades_beats/): Primary social channel and an alternative route for direct messages. Use the website booking page for structured DJ booking and collaboration inquiries.
 - [TikTok](https://www.tiktok.com/@bladesbeats): Short-form social channel.
-
-## Related project
-
-- [DJ Toolkit](https://bladesbeats.com/dj-toolkit/): Static bridge page for the separate DJ utility site.
-- [dj.bladesbeats.com](https://dj.bladesbeats.com/): Separate DJ utility site. Treat this as a related side project, not as the main artist homepage.
 
 ## Suggested wording
 

@@ -9,6 +9,9 @@ routes = [
 [vars]
 ALLOWED_ORIGIN = "https://bladesbeats.com"
 
+# Optional: set a separate BLOCKLIST_SALT secret with Wrangler. If omitted, the
+# Turnstile secret is used when deriving short-lived blocklist keys from IPs.
+
 # Optional but recommended for one-hour IP blocking after malicious form payloads:
 # 1. Run: wrangler kv namespace create CONTACT_BLOCKLIST
 # 2. Copy the returned id into the block below and uncomment it.

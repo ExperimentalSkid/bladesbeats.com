@@ -174,5 +174,36 @@
         "chart": "tech house"
       }
     ]
+  },
+  {
+    "title": "Hard Latin Tech & Tribal House Session 1",
+    "slug": "hard-latin-tech-tribal-house-session-1",
+    "artist": "BladesBeats",
+    "platform": "Mixcloud",
+    "status": "official",
+    "description": "Hard Latin Tech & Tribal House Live Mix Vol. 01, with driving Latin rhythms, tribal percussion and tech-house basslines.",
+    "longDescription": "",
+    "genres": [
+      "Latin house",
+      "Tribal house",
+      "Deep Tech / Deep Tech House",
+      "Multi-genre",
+      "Club House"
+    ],
+    "locationContext": "Sevilla",
+    "links": {
+      "mixcloud": "https://www.mixcloud.com/BladesBeats/hard-latin-tech-tribal-house-session-1/",
+      "youtube": "",
+      "spotify": ""
+    },
+    "mixcloudUrl": "https://www.mixcloud.com/BladesBeats/hard-latin-tech-tribal-house-session-1/",
+    "mixcloudKey": "/BladesBeats/hard-latin-tech-tribal-house-session-1/",
+    "embedUrl": "https://www.mixcloud.com/widget/iframe/?hide_cover=1&light=0&feed=%2FBladesBeats%2Fhard-latin-tech-tribal-house-session-1%2F",
+    "image": "https://thumbnailer.mixcloud.com/unsafe/600x600/extaudio/2/b/e/3/c6ea-93e7-44ca-ba67-8559cf313dfd",
+    "duration": "1:28:02",
+    "durationSeconds": 5282,
+    "uploadDate": "2026-10-08",
+    "publishedDate": "2026-10-08",
+    "lastmod": "2026-10-08"
   }
 ]

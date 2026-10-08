@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>BladesBeats Release Desk</title>
+  <link rel="stylesheet" href="/ui.css">
+  <script defer src="/ui.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead"><div><p class="eyebrow">Private temporary session</p><h1>Release Desk<span>.</span></h1></div><div class="session"><strong data-session-status>Connecting</strong><span data-session-time></span></div></header>
+    <section class="notice login-panel" data-login-notice>
+      <form data-login-form>
+        <div><p class="eyebrow">One-time access</p><h2>Enter the password printed in SSH.</h2><p>The password expires after ten minutes and can only be exchanged once.</p></div>
+        <label>Temporary password<input type="password" required autocomplete="one-time-code" spellcheck="false" data-login-password></label>
+        <button class="button primary" type="submit" data-login-submit>Open Release Desk</button>
+        <p class="login-status" data-login-status aria-live="polite"></p>
+      </form>
+    </section>
+    <div data-app hidden>
+      <section class="notice status-error" data-launch-blockers hidden><p></p></section>
+      <section class="toolbar"><div><p class="eyebrow">Weekly sources</p><h2>Review queue</h2><p data-check-status>No check loaded.</p></div><button class="button" type="button" data-run-check>Run check now</button></section>
+      <nav class="tabs" aria-label="Candidate states"><button type="button" aria-pressed="true" data-tab="pending">Pending <span data-count-pending>0</span></button><button type="button" aria-pressed="false" data-tab="approved">Approved <span data-count-approved>0</span></button><button type="button" aria-pressed="false" data-tab="published">Published <span data-count-published>0</span></button><button type="button" aria-pressed="false" data-tab="ignored">Ignored <span data-count-ignored>0</span></button></nav>
+      <section class="queue" data-queue></section>
+      <section class="empty" data-empty hidden><p>No candidates in this state.</p></section>
+      <section class="feature-panel"><div><p class="eyebrow">Homepage control</p><h2>Featured releases</h2><p>Pin up to four approved original releases in order. Any remaining homepage positions fall back to the newest releases.</p></div><div class="feature-picker"><select data-feature-select aria-label="Choose a release to feature"></select><button class="button small" type="button" data-feature-add>Add feature</button></div><div class="feature-list" data-feature-list></div></section>
+      <section class="publish-panel"><div><p class="eyebrow">Separate confirmation gate</p><h2>Prepare & publish</h2><p>Preparation builds and validates a complete immutable version. It does not change the live site.</p></div><button class="button primary" type="button" data-prepare>Prepare release</button><div class="prepared" data-prepared hidden><div class="diff" data-diff></div><details class="diff-files"><summary>Review changed paths</summary><div data-diff-files></div></details><a class="button" href="#" target="_blank" rel="noopener" data-preview>Open private preview</a><label>Explicit confirmation phrase<input type="text" spellcheck="false" autocomplete="off" data-publish-phrase></label><button class="button danger" type="button" data-publish disabled>Publish this version</button><p class="publish-note" data-publish-note></p></div></section>
+      <section class="versions"><div><p class="eyebrow">Recovery</p><h2>Rollback versions</h2></div><div data-versions></div></section>
+    </div>
+  </main>
+  <template id="candidate-template"><article class="candidate"><header><div><span class="source" data-source></span><h3 data-title-heading></h3></div><span class="state" data-state></span></header><div class="candidate-grid"><figure><img data-image-preview alt="Candidate artwork"></figure><div class="fields"><label>Title<input data-field="title" maxlength="180"></label><label>Artist<input data-field="artist" maxlength="180"></label><div class="field-row"><label>Date<input data-field="releaseDate" type="date"></label><label>Category<select data-field="type"><option value="single">Original</option><option value="remix">Remix</option><option value="edit">Edit</option><option value="instrumental">Instrumental</option><option value="dj set">DJ set</option></select></label></div><label>Artwork URL<input data-field="image" type="url"></label><div class="field-row"><label>Spotify<input data-link="spotify" type="url"></label><label>Apple Music<input data-link="appleMusic" type="url"></label></div><div class="field-row"><label>YouTube<input data-link="youtube" type="url"></label><label>Mixcloud<input data-link="mixcloud" type="url"></label></div><p class="notes" data-notes></p></div></div><footer><button class="button small" type="button" data-action="save">Save draft</button><button class="button small primary" type="button" data-action="approve">Approve</button><button class="button small" type="button" data-action="ignore">Ignore</button><button class="button small" type="button" data-action="reopen">Reopen</button><button class="button small" type="button" data-action="feature">Feature on home</button><span data-card-status></span></footer></article></template>
+</body>
+</html>
