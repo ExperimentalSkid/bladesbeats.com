@@ -304,7 +304,7 @@ ${renderedColumns}
 
 function injectHomepageCoverWall(html, releases, sets) {
   const wall = renderHomepageCoverWall(releases, sets);
-  const existing = /    <div class="home-cover-wall"[^>]*>[\s\S]*?<\/div>\n    <div class="home-cover-scrim"/;
+  const existing = /    <div class="home-cover-wall"[^>]*>[\s\S]*<\/div>\r?\n    <div class="home-cover-scrim"/;
   if (!existing.test(html)) throw new Error("Could not find homepage cover wall.");
   return html.replace(existing, `${wall}\n    <div class="home-cover-scrim"`);
 }
@@ -452,13 +452,13 @@ function compactReleasePageTitle(title, maxLength = 65) {
   const separator = " | ";
   const value = String(title || "Release").trim();
   const full = `${value}${separator}${brand}`;
-  if ([...full].length <= maxLength) return escapeHtml(full);
+  if ([...full].length <= maxLength) return full;
 
   const available = Math.max(12, maxLength - [...`${separator}${brand}`].length - 1);
   let shortened = [...value].slice(0, available).join("").trimEnd();
   const lastSpace = shortened.lastIndexOf(" ");
   if (lastSpace >= Math.floor(available * 0.65)) shortened = shortened.slice(0, lastSpace);
-  return escapeHtml(`${shortened.trimEnd()}…${separator}${brand}`);
+  return `${shortened.trimEnd()}…${separator}${brand}`;
 }
 
 function compactMetaDescription(value, maxLength = 155) {
@@ -1144,7 +1144,7 @@ body.release-page .release-editorial-copy{line-height:1.75}
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title}</title>
+<title>${escapeHtml(title)}</title>
 <meta name="description" content="${escapeAttr(description)}">
 <meta name="theme-color" content="#090B18">
 <meta name="author" content="BladesBeats">
@@ -3362,7 +3362,9 @@ function main() {
   const releases = readJson("data/releases.json")
     .filter((release) => !isExcludedRelease(release))
     .map((release) => cachedCatalogImage(release, "releases"));
-  const sets = readJson("data/dj-sets.json").map((set) => cachedCatalogImage(set, "sets"));
+  const sets = readJson("data/dj-sets.json")
+    .map((set) => cachedCatalogImage(set, "sets"))
+    .sort((a, b) => String(b.uploadDate || b.publishedDate || "").localeCompare(String(a.uploadDate || a.publishedDate || "")));
   const gigs = readJson("data/gigs.json");
   validateUniqueSlugs(releases, "Release");
   validateUniqueSlugs(sets, "DJ set");
