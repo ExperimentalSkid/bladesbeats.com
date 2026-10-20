@@ -1,29 +1,41 @@
 # BladesBeats VPS operations
 
-## Direct GitHub deployment to `/var/www/bladesbeats.com`
+## Direct GitHub deployment of the current site
 
-The public checkout can be updated from the reviewed GitHub branch with the guarded deployment helper. It refuses to overwrite tracked server changes, verifies the repository origin, allows only a fast-forward update, validates the generated site, tests Nginx, reloads it, and then crawls the production sitemap and canonical URLs.
+`/var/www/bladesbeats.com` is the private Git checkout. Nginx serves the public-only release at `/var/www/bladesbeats-public/current`. The helper fetches a reviewed fast-forward commit into a detached candidate checkout, validates it, stages only allowlisted public files, switches the release symlink, installs the reviewed Nginx configuration, and checks the exact homepage and sitemap bytes through the local HTTPS origin. A failed origin check restores the previous link and Nginx configuration. The source checkout advances only after the origin check succeeds.
 
-For the first deployment that introduces the helper, run:
+For the **first cutover**, run the new helper from a temporary checkout so the old helper cannot update the currently served Git checkout first:
 
 ```bash
-sudo git -C /var/www/bladesbeats.com fetch origin agent/launch-overhaul && \
-sudo git -C /var/www/bladesbeats.com switch agent/launch-overhaul && \
-sudo git -C /var/www/bladesbeats.com merge --ff-only origin/agent/launch-overhaul && \
+sudo bash <<'BASH'
+set -Eeuo pipefail
+site=/var/www/bladesbeats.com
+bootstrap="$(mktemp -d /var/www/bladesbeats-bootstrap.XXXXXXXX)"
+cleanup() {
+  git -C "$site" worktree remove --force "$bootstrap" 2>/dev/null || rmdir "$bootstrap" 2>/dev/null || true
+}
+trap cleanup EXIT
+git -C "$site" fetch origin agent/launch-overhaul
+git -C "$site" worktree add --detach "$bootstrap" origin/agent/launch-overhaul
+BLADESBEATS_NGINX_CONFIG=/etc/nginx/sites-available/bladesbeats.com \
+  bash "$bootstrap/deploy/deploy-from-github.sh"
+BASH
+```
+
+After that cutover, the normal command is:
+
+```bash
 sudo env BLADESBEATS_NGINX_CONFIG=/etc/nginx/sites-available/bladesbeats.com \
   bash /var/www/bladesbeats.com/deploy/deploy-from-github.sh
 ```
 
-For later deployments, the command is:
+If the active virtual-host file has a different name, replace `/etc/nginx/sites-available/bladesbeats.com` with its exact path. The helper accepts only files inside `/etc/nginx/sites-available/` or `/etc/nginx/conf.d/`. Check that the reviewed configuration still has the right Let's Encrypt certificate paths before the first cutover. The helper keeps timestamped Nginx backups and older public releases for manual recovery. A Cloudflare-facing verification failure after the local origin succeeds exits with code 2 and leaves the healthy release live; inspect CDN cache or rules in that case.
 
-```bash
-sudo env BLADESBEATS_NGINX_CONFIG=/etc/nginx/sites-available/bladesbeats.com \
-  bash /var/www/bladesbeats.com/deploy/deploy-from-github.sh
-```
+The contact-form Worker is a separate Cloudflare deployment. After merging Worker changes, publish `workers/contact-worker.js` from an authenticated Wrangler environment with `npm run contact:deploy`; the VPS helper does not change Cloudflare Workers.
 
-If the active virtual-host file has a different name, replace `/etc/nginx/sites-available/bladesbeats.com` with its exact path. The helper accepts only files inside `/etc/nginx/sites-available/` or `/etc/nginx/conf.d/`, saves a timestamped backup, installs the reviewed configuration, and automatically restores the backup if `nginx -t` fails. The verifier deliberately fails if source data, scripts, worker code, Git metadata, or deployment documentation are publicly reachable.
+## Optional Release Desk workflow
 
-This runbook preserves the required workflow: SSH in, run one command, receive a temporary HTTPS URL and random one-time password, review a private draft, explicitly publish if correct, and press Ctrl+C to remove the panel and host-firewall rule.
+The separate Release Desk workflow provides a temporary HTTPS review panel and uses `/srv/bladesbeats/current`. It has its own build output and prerequisite legal details. Do not point the direct deployment helper at its release directory.
 
 ## Before the first server change
 
@@ -111,6 +123,6 @@ journalctl -u bladesbeats-release-check.service
 
 Candidates and audit records live under `/var/lib/bladesbeats/release-desk`. Deployment history lives in `/var/lib/bladesbeats/deployments.jsonl`. No credentials or temporary access tokens belong in Git.
 
-## Initial Nginx cutover
+## Release Desk Nginx cutover
 
-`deploy/nginx-bladesbeats.conf` is a reviewed reference, not an automatic overwrite. Before the first cutover, compare it with the active virtual host and confirm the existing Let’s Encrypt domain-certificate paths. Back up the active virtual host. The first change to point Nginx at `/srv/bladesbeats/current` is a separate, explicit live approval. If the first cutover must be reversed, restore that backed-up virtual host; after the first successful cutover, future panel publications and rollbacks change only the atomic release symlink.
+The optional Release Desk needs its own reviewed Nginx change to point at `/srv/bladesbeats/current`. It must not be applied to the direct deployment above. Compare its configuration with the active virtual host and confirm the certificate paths before changing it. After that separate cutover, panel publications and rollbacks change its release symlink.

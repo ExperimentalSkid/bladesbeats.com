@@ -63,6 +63,74 @@ async function runBatches(items, size, callback) {
   }
 }
 
+function privateBlockKind(response) {
+  if (response.status === 404) return "404 not found";
+  if (response.status === 403 && /cloudflare/i.test(response.headers.get("server") || "")) return "403 Cloudflare denied";
+  return "";
+}
+
+async function verifyPrivatePath(privatePath, requestFn = request, origin = ORIGIN, nonce = Date.now()) {
+  const pathErrors = [];
+  const statuses = [];
+  for (const [label, url] of [
+    ["public URL", `${origin}${privatePath}`],
+    ["cache-busted URL", `${origin}${privatePath}?deployment-check=${nonce}`]
+  ]) {
+    try {
+      const response = await requestFn(url);
+      const kind = privateBlockKind(response);
+      statuses.push(kind || String(response.status));
+      if (!kind) {
+        pathErrors.push(`${privatePath}: ${label} is not blocked (HTTP ${response.status}); check origin rules and purge this exact CDN URL if cached`);
+        continue;
+      }
+      if (label === "cache-busted URL") {
+        const cacheControl = response.headers.get("cache-control") || "";
+        if (!/\bno-store\b/i.test(cacheControl)) pathErrors.push(`${privatePath}: ${kind} is missing Cache-Control: no-store`);
+        if (response.status === 404) {
+          const cdnCacheControl = response.headers.get("cdn-cache-control") || response.headers.get("cloudflare-cdn-cache-control") || "";
+          if (!/\bno-store\b/i.test(cdnCacheControl)) pathErrors.push(`${privatePath}: ${kind} is missing CDN no-store protection`);
+        }
+      }
+    } catch (error) {
+      pathErrors.push(`${privatePath}: ${label} check failed (${error.message})`);
+    }
+  }
+  return { errors: pathErrors, statuses };
+}
+
+async function verifyCanonicalRedirect(start, expected = `${EXPECTED_ORIGIN}/`, requestFn = request) {
+  const allowedHosts = new Set(["bladesbeats.com", "www.bladesbeats.com"]);
+  const seen = new Set();
+  let current = start;
+  for (let redirects = 0; redirects <= 2; redirects += 1) {
+    if (seen.has(current)) return `${start}: redirect loop at ${current}`;
+    seen.add(current);
+    let response;
+    try {
+      response = await requestFn(current);
+    } catch (error) {
+      return `${start}: request failed at ${current} (${error.message})`;
+    }
+    const location = response.headers.get("location") || "";
+    if (response.status === 301 || response.status === 308) {
+      if (redirects === 2) return `${start}: more than two permanent redirects (last HTTP ${response.status} to ${location || "nowhere"})`;
+      if (!location) return `${start}: HTTP ${response.status} has no Location`;
+      let next;
+      try { next = new URL(location, current); } catch { return `${start}: invalid redirect Location ${location}`; }
+      if (next.protocol !== "https:" || !allowedHosts.has(next.hostname) || next.port || next.username || next.password || next.pathname !== "/" || next.search || next.hash) {
+        return `${start}: unsafe redirect from ${current} to ${next.href}`;
+      }
+      current = next.href;
+      continue;
+    }
+    if (redirects === 0) return `${start}: expected a permanent redirect, received HTTP ${response.status}${location ? ` to ${location}` : ""}`;
+    if (current !== expected || response.status !== 200) return `${start}: expected HTTP 200 at ${expected}, received HTTP ${response.status} at ${current}`;
+    return "";
+  }
+  return `${start}: redirect chain did not reach ${expected}`;
+}
+
 async function main() {
   const expectedXml = fs.readFileSync(path.join(ROOT, "sitemap.xml"), "utf8");
   const expectedUrls = sitemapUrls(expectedXml);
@@ -80,6 +148,7 @@ async function main() {
 
   await runBatches(expectedUrls, 10, verifyPage);
 
+  const privateStatuses = [];
   for (const privatePath of [
     "/package.json",
     "/scripts/build-pages.js",
@@ -89,34 +158,15 @@ async function main() {
     "/deploy/OPERATIONS.md",
     "/.git/config"
   ]) {
-    try {
-      const response = await request(`${ORIGIN}${privatePath}`);
-      if (response.status !== 404) {
-        fail(`${privatePath}: expected 404, received ${response.status}; purge this exact URL from the CDN cache`);
-        continue;
-      }
-      const uncachedResponse = await request(`${ORIGIN}${privatePath}?deployment-check=${Date.now()}`);
-      if (uncachedResponse.status !== 404) fail(`${privatePath}: cache-busted request expected 404, received ${uncachedResponse.status}`);
-      const cacheControl = uncachedResponse.headers.get("cache-control") || "";
-      const cdnCacheControl = uncachedResponse.headers.get("cdn-cache-control") || uncachedResponse.headers.get("cloudflare-cdn-cache-control") || "";
-      if (!/no-store/i.test(cacheControl)) fail(`${privatePath}: 404 response is missing Cache-Control: no-store`);
-      if (!/no-store/i.test(cdnCacheControl)) fail(`${privatePath}: 404 response is missing CDN no-store protection`);
-    } catch (error) {
-      fail(`${privatePath}: privacy check failed (${error.message})`);
-    }
+    const result = await verifyPrivatePath(privatePath);
+    for (const error of result.errors) fail(error);
+    privateStatuses.push(`${privatePath}: ${result.statuses.join(" / ")}`);
   }
 
   if (ORIGIN === EXPECTED_ORIGIN) {
-    for (const [url, expectedLocation] of [
-      ["http://bladesbeats.com/", `${EXPECTED_ORIGIN}/`],
-      ["http://www.bladesbeats.com/", `${EXPECTED_ORIGIN}/`],
-      ["https://www.bladesbeats.com/", `${EXPECTED_ORIGIN}/`]
-    ]) {
-      const response = await request(url);
-      const location = response.headers.get("location") || "";
-      if (response.status !== 301 || location !== expectedLocation) {
-        fail(`${url}: expected 301 to ${expectedLocation}, received ${response.status} to ${location || "nowhere"}`);
-      }
+    for (const url of ["http://bladesbeats.com/", "http://www.bladesbeats.com/", "https://www.bladesbeats.com/"]) {
+      const error = await verifyCanonicalRedirect(url);
+      if (error) fail(error);
     }
   }
 
@@ -127,9 +177,14 @@ async function main() {
   }
 
   console.log(`Verified ${expectedUrls.length} production pages, canonical redirects, robots.txt, sitemap parity, and private-path blocking.`);
+  for (const status of privateStatuses) console.log(`- ${status}`);
 }
 
-main().catch((error) => {
-  console.error(`Production verification failed: ${error.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`Production verification failed: ${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { privateBlockKind, verifyPrivatePath, verifyCanonicalRedirect };

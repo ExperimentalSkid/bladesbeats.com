@@ -6,6 +6,9 @@ const ROOT = path.resolve(__dirname, "..");
 const SITE = "https://bladesbeats.com";
 const BUILD_DATE = process.env.BUILD_DATE || new Date().toISOString().slice(0, 10);
 const SITE_TEMPLATE_LASTMOD = "2026-08-24";
+// A removal changes catalogue pages even though the removed item no longer has a date to read.
+// Bump this when catalogue membership changes without a newer surviving item date.
+const CATALOG_INDEX_CONTENT_LASTMOD = "2026-10-20";
 const ARTIST_ID = `${SITE}/#artist`;
 const BLOCKED_APPLE_ID_PREFIX = "178307293";
 const EXCLUDED_APPLE_IDS = new Set(["0", "3"].map((suffix) => `${BLOCKED_APPLE_ID_PREFIX}${suffix}`));
@@ -598,7 +601,8 @@ function pageLastmod(...dates) {
 }
 
 function renderJsonLd(data) {
-  return `<script type="application/ld+json">\n${JSON.stringify(data, null, 2)}\n</script>`;
+  // A literal </script> inside upstream catalogue text would close this HTML script element.
+  return `<script type="application/ld+json">\n${JSON.stringify(data, null, 2).replace(/</g, "\\u003c")}\n</script>`;
 }
 
 function renderAlternates(alternates) {
@@ -3381,6 +3385,7 @@ function main() {
   const setFiles = [];
   const setFilesEs = [];
   const catalogLastmod = pageLastmod(
+    CATALOG_INDEX_CONTENT_LASTMOD,
     releases.map((item) => item.lastmod || item.releaseDate),
     sets.map((item) => item.lastmod || item.uploadDate || item.publishedDate),
     gigs.map((item) => item.lastmod || item.startDate)
@@ -3442,13 +3447,13 @@ function main() {
   const musicIndex = buildMusicIndex(releases, generatedReleaseUrls, sets);
   validatePageHtml(musicIndex, "music index");
   musicFiles.unshift(["index.html", musicIndex]);
-  const releasesLastmod = pageLastmod(releases.map((item) => item.lastmod || item.releaseDate));
+  const releasesLastmod = pageLastmod(CATALOG_INDEX_CONTENT_LASTMOD, releases.map((item) => item.lastmod || item.releaseDate));
   sitemap.splice(1, 0, { loc: `${SITE}/music/`, lastmod: releasesLastmod });
 
   const setIndex = buildSetIndex(sets, generatedSetUrls, "en");
   validatePageHtml(setIndex, "dj-sets index");
   setFiles.unshift(["index.html", setIndex]);
-  const setsLastmod = pageLastmod(sets.map((item) => item.lastmod || item.uploadDate || item.publishedDate));
+  const setsLastmod = pageLastmod(CATALOG_INDEX_CONTENT_LASTMOD, sets.map((item) => item.lastmod || item.uploadDate || item.publishedDate));
   sitemap.splice(2, 0, { loc: `${SITE}/dj-sets/`, lastmod: setsLastmod });
 
   injectCatalogDataIntoHomepage(releases, sets);
@@ -3501,4 +3506,6 @@ function main() {
   if (skipped.sets.length) console.log(`Skipped DJ-set detail pages without official links: ${skipped.sets.join("; ")}`);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { renderJsonLd };

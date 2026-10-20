@@ -2,6 +2,8 @@ const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store"
 };
+const MAX_REQUEST_BYTES = 16 * 1024;
+const MAX_FIELDS = 32;
 
 function json(data, status = 200, corsHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -32,6 +34,9 @@ function cleanLine(value, maxLength = 1200) {
 }
 
 function normalizePayload(body) {
+  if (!body || typeof body !== "object" || (Array.isArray(body.fields) && body.fields.length > MAX_FIELDS)) {
+    throw new Error("invalid_fields");
+  }
   const fields = Array.isArray(body.fields) ? body.fields.map((line) => cleanLine(line)).filter(Boolean) : [];
   return {
     turnstileToken: cleanLine(body.turnstileToken, 4096),
@@ -40,6 +45,32 @@ function normalizePayload(body) {
     page: cleanLine(body.page, 500),
     fields
   };
+}
+
+async function readJsonBody(request) {
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) throw new Error("request_too_large");
+  if (!request.body) throw new Error("bad_request");
+  const reader = request.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_REQUEST_BYTES) {
+      await reader.cancel();
+      throw new Error("request_too_large");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 const SQLI_HIGH_CONFIDENCE_PATTERNS = [
@@ -139,11 +170,9 @@ async function sendEmail(payload, env) {
     })
   });
 
-  const responseText = await response.text().catch(() => "");
   if (!response.ok) {
     console.warn("Contact form failed: email_provider_rejected", {
-      status: response.status,
-      body: responseText.slice(0, 800)
+      status: response.status
     });
     return false;
   }
@@ -177,9 +206,10 @@ export default {
 
     let payload;
     try {
-      payload = normalizePayload(await request.json());
+      payload = normalizePayload(await readJsonBody(request));
     } catch (error) {
-      return json({ ok: false, error: "bad_request" }, 400, headers);
+      const tooLarge = error.message === "request_too_large";
+      return json({ ok: false, error: tooLarge ? "request_too_large" : "bad_request" }, tooLarge ? 413 : 400, headers);
     }
 
     if (!payload.turnstileToken || payload.fields.length < 3) {
