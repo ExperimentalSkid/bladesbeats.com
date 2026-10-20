@@ -1,36 +1,28 @@
 # BladesBeats website
 
-Launch-candidate source for [bladesbeats.com](https://bladesbeats.com). The repository is private; only the generated `dist/` directory is public website material.
+Source for [bladesbeats.com](https://bladesbeats.com). The current EN/ES site is generated into this checkout by `scripts/build-pages.js`. Production serves only allowlisted public files staged outside the private Git checkout.
 
-## Non-negotiable publishing rules
-
-- Source checks create review candidates only. They never edit the live catalogue and never publish.
-- Candidate approval edits source data but still does not publish.
-- A release must be built, validated, privately previewed and explicitly confirmed with `PUBLISH <version>` before the live symlink can change.
-- Rollback is limited to versions that were previously published and requires `ROLLBACK <version>`.
-- The temporary Release Desk exists only while the root SSH command is running. Ctrl+C stops it and removes its temporary firewall rule.
-- The private catalogue exclusion policy is applied centrally to source checks, approvals and every generated public file.
-
-## Local commands
+## Current site
 
 ```text
-npm run build
-npm run validate
+npm run build:offline
 npm test
-npm run catalog:check
+node scripts/stage-public-site.js . /path/to/new-empty-public-directory
 ```
 
-`npm run build` writes a clean static site to `dist/`. `npm test` validates all generated routes and runs the Release Desk integration test. `npm run catalog:check` checks official sources and writes review candidates to ignored private state; it does not approve or publish anything.
+`build:offline` merges the approved local catalogue and regenerates the static pages without fetching external sources. `npm run build` also fetches provider data and caches assets. The staging command validates sitemap targets and local links, rejects symbolic links and unexpected files inside public directories, and copies only public pages and assets. The destination must be fresh or empty and outside the checkout.
 
-## Structure
+The active VPS helper is `deploy/deploy-from-github.sh`. It validates a candidate commit, stages a public-only release under `/var/www/bladesbeats-public/releases`, switches `current` atomically, checks the local HTTPS origin, and then advances the private checkout. See [VPS operations](deploy/OPERATIONS.md) for the first-cutover and normal commands.
 
-- `data/`: approved releases, DJ sets, gigs and legal data.
-- `config/site.json`: public profile destinations and homepage feature pins.
-- `src/`: public CSS and JavaScript source.
-- `scripts/build-launch.js`: clean public-site generator.
-- `scripts/check-releases.js`: daily official-source checker with credential-free Apple Music, YouTube and Mixcloud support.
-- `release-desk/`: temporary authenticated review, preview, publish and rollback panel.
-- `deploy/`: reviewed VPS launcher, constrained publish helper, Nginx reference and systemd timer.
-- `dist/`: generated public output; never use the repository root as the Nginx document root.
+## Repository layout
 
-VPS setup and operating instructions are in `deploy/OPERATIONS.md`.
+- `data/`: approved releases, DJ sets, gigs, and legal data.
+- `config/site.json`: profile destinations and feature pins.
+- `assets/`: current public media, fonts, CSS, and JavaScript.
+- `scripts/build-pages.js`: current static-page generator.
+- `scripts/validate-site.js`: full-checkout validator.
+- `scripts/stage-public-site.js`: public-only release staging.
+- `workers/`: Cloudflare contact-form Worker source.
+- `deploy/`: VPS helper, Nginx configuration, and optional Release Desk tools.
+
+The optional Release Desk in `release-desk/` has a separate `dist/` build and publishing workflow. Its release tree is not used by the current direct deployment.

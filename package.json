@@ -10,7 +10,7 @@
     "build:offline": "npm run merge && node scripts/build-pages.js",
     "validate": "node scripts/validate-site.js",
     "verify:production": "node scripts/verify-production.js --origin=https://bladesbeats.com",
-    "test": "node --check assets/js/catalog-hero.js && node --check scripts/build-pages.js && node --check scripts/validate-site.js && node --check scripts/verify-production.js && npm run validate",
+    "test": "node --check assets/js/catalog-hero.js && node --check scripts/build-pages.js && node --check scripts/validate-site.js && node --check scripts/stage-public-site.js && node --check scripts/verify-production.js && node --check workers/contact-worker.js && node --test tests/build-pages-security.test.js tests/verify-production-security.test.js tests/contact-worker-security.test.js tests/stage-public-site.test.js && npm run validate",
     "contact:dev": "wrangler dev --config workers/wrangler.contact.toml",
     "contact:deploy": "wrangler deploy --config workers/wrangler.contact.toml"
   }
