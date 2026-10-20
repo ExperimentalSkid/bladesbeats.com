@@ -2,3 +2,7 @@ data/catalog-events.json
 .dev.vars
 .env
 workers/.dev.vars
+dist/
+.release-desk/
+release-desk/data/
+deploy/releases/

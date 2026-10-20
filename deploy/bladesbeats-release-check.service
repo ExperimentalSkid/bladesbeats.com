@@ -1,0 +1,18 @@
+[Unit]
+Description=BladesBeats daily release source check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=bladesbeats-desk
+Group=bladesbeats-desk
+WorkingDirectory=/srv/bladesbeats/source
+EnvironmentFile=-/etc/bladesbeats/release-check.env
+Environment=RELEASE_DESK_DATA_DIR=/var/lib/bladesbeats/release-desk
+ExecStart=/usr/bin/node /srv/bladesbeats/source/scripts/check-releases.js
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bladesbeats/release-desk

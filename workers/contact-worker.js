@@ -2,6 +2,8 @@ const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store"
 };
+const MAX_REQUEST_BYTES = 16 * 1024;
+const MAX_FIELDS = 32;
 
 function json(data, status = 200, corsHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -10,12 +12,17 @@ function json(data, status = 200, corsHeaders = {}) {
   });
 }
 
-function corsHeaders(request, env) {
+function allowedOrigin(request, env) {
   const origin = request.headers.get("Origin") || "";
   const allowed = (env.ALLOWED_ORIGIN || "https://bladesbeats.com").split(",").map((item) => item.trim());
-  const allowOrigin = allowed.includes(origin) ? origin : allowed[0];
+  return allowed.includes(origin) ? origin : "";
+}
+
+function corsHeaders(request, env) {
+  const origin = allowedOrigin(request, env);
+  if (!origin) return null;
   return {
-    "access-control-allow-origin": allowOrigin,
+    "access-control-allow-origin": origin,
     "access-control-allow-methods": "POST, OPTIONS",
     "access-control-allow-headers": "content-type",
     "vary": "Origin"
@@ -27,15 +34,43 @@ function cleanLine(value, maxLength = 1200) {
 }
 
 function normalizePayload(body) {
+  if (!body || typeof body !== "object" || (Array.isArray(body.fields) && body.fields.length > MAX_FIELDS)) {
+    throw new Error("invalid_fields");
+  }
   const fields = Array.isArray(body.fields) ? body.fields.map((line) => cleanLine(line)).filter(Boolean) : [];
   return {
     turnstileToken: cleanLine(body.turnstileToken, 4096),
     subject: cleanLine(body.subject, 160) || "BladesBeats contact",
     type: cleanLine(body.type, 120),
     page: cleanLine(body.page, 500),
-    ip: cleanLine(body.ip, 80),
     fields
   };
+}
+
+async function readJsonBody(request) {
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) throw new Error("request_too_large");
+  if (!request.body) throw new Error("bad_request");
+  const reader = request.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_REQUEST_BYTES) {
+      await reader.cancel();
+      throw new Error("request_too_large");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 const SQLI_HIGH_CONFIDENCE_PATTERNS = [
@@ -53,18 +88,22 @@ function requestIp(request) {
   return request.headers.get("CF-Connecting-IP") || request.headers.get("x-forwarded-for") || "";
 }
 
-function blockKey(ip) {
-  return `blocked:${ip}`;
+async function blockKey(ip, env) {
+  const salt = env.BLOCKLIST_SALT || env.TURNSTILE_SECRET_KEY || "bladesbeats-contact-blocklist";
+  const bytes = new TextEncoder().encode(`${salt}:${ip}`);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `blocked:${hash}`;
 }
 
 async function isBlocked(ip, env) {
   if (!ip || !env.CONTACT_BLOCKLIST) return false;
-  return Boolean(await env.CONTACT_BLOCKLIST.get(blockKey(ip)));
+  return Boolean(await env.CONTACT_BLOCKLIST.get(await blockKey(ip, env)));
 }
 
 async function blockIp(ip, env, reason) {
   if (!ip || !env.CONTACT_BLOCKLIST) return;
-  await env.CONTACT_BLOCKLIST.put(blockKey(ip), reason || "blocked", { expirationTtl: 3600 });
+  await env.CONTACT_BLOCKLIST.put(await blockKey(ip, env), reason || "blocked", { expirationTtl: 3600 });
 }
 
 function looksLikeSqlInjection(payload) {
@@ -72,7 +111,6 @@ function looksLikeSqlInjection(payload) {
     payload.subject,
     payload.type,
     payload.page,
-    payload.ip,
     ...payload.fields
   ].join("\n");
   return SQLI_HIGH_CONFIDENCE_PATTERNS.some((pattern) => pattern.test(haystack));
@@ -111,8 +149,7 @@ async function sendEmail(payload, env) {
   const text = [
     payload.fields.join("\n"),
     "",
-    payload.page ? `Page: ${payload.page}` : "",
-    payload.ip ? `Detected IP: ${payload.ip}` : ""
+    payload.page ? `Page: ${payload.page}` : ""
   ].filter(Boolean).join("\n");
 
   const replyToLine = payload.fields.find((line) => /^email:/i.test(line));
@@ -133,11 +170,9 @@ async function sendEmail(payload, env) {
     })
   });
 
-  const responseText = await response.text().catch(() => "");
   if (!response.ok) {
     console.warn("Contact form failed: email_provider_rejected", {
-      status: response.status,
-      body: responseText.slice(0, 800)
+      status: response.status
     });
     return false;
   }
@@ -152,6 +187,9 @@ async function sendEmail(payload, env) {
 export default {
   async fetch(request, env) {
     const headers = corsHeaders(request, env);
+    if (!headers) {
+      return json({ ok: false, error: "origin_not_allowed" }, 403, { "vary": "Origin" });
+    }
     const ip = requestIp(request);
 
     if (request.method === "OPTIONS") {
@@ -168,9 +206,10 @@ export default {
 
     let payload;
     try {
-      payload = normalizePayload(await request.json());
+      payload = normalizePayload(await readJsonBody(request));
     } catch (error) {
-      return json({ ok: false, error: "bad_request" }, 400, headers);
+      const tooLarge = error.message === "request_too_large";
+      return json({ ok: false, error: tooLarge ? "request_too_large" : "bad_request" }, tooLarge ? 413 : 400, headers);
     }
 
     if (!payload.turnstileToken || payload.fields.length < 3) {

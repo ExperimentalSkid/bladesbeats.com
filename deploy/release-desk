@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "Run release-desk as root so the temporary firewall rule can be opened and removed." >&2
+  exit 1
+fi
+
+SOURCE_DIR="${BLADESBEATS_SOURCE:-/srv/bladesbeats/source}"
+CURRENT_DIR="${BLADESBEATS_CURRENT_DIR:-/srv/bladesbeats/current}"
+RELEASES_DIR="${BLADESBEATS_RELEASES_DIR:-/srv/bladesbeats/releases}"
+DATA_DIR="${RELEASE_DESK_DATA_DIR:-/var/lib/bladesbeats/release-desk}"
+DESK_USER="${RELEASE_DESK_USER:-bladesbeats-desk}"
+NODE_BIN="${RELEASE_DESK_NODE:-$(command -v node || true)}"
+PUBLIC_IP="${BLADESBEATS_PUBLIC_IP:-$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}')}"
+
+[[ -x "${NODE_BIN}" ]] || { echo "Node.js is not installed." >&2; exit 1; }
+[[ -f "${SOURCE_DIR}/release-desk/server.js" ]] || { echo "Release Desk source was not found at ${SOURCE_DIR}." >&2; exit 1; }
+[[ -d "${CURRENT_DIR}" ]] || { echo "Current public release was not found at ${CURRENT_DIR}." >&2; exit 1; }
+[[ "${PUBLIC_IP}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$|: ]] || { echo "Set BLADESBEATS_PUBLIC_IP to the public VPS address." >&2; exit 1; }
+id "${DESK_USER}" >/dev/null 2>&1 || { echo "Service account ${DESK_USER} does not exist." >&2; exit 1; }
+
+PORT="${RELEASE_DESK_PUBLIC_PORT:-43827}"
+if ! [[ "${PORT}" =~ ^[0-9]+$ ]] || (( PORT < 1024 || PORT > 65535 )); then
+  echo "RELEASE_DESK_PUBLIC_PORT must be between 1024 and 65535." >&2
+  exit 1
+fi
+if ss -H -ltn "sport = :${PORT}" | grep -q .; then
+  echo "Temporary panel port ${PORT} is already in use." >&2
+  exit 1
+fi
+
+CERT_DIR="/etc/letsencrypt/live/${PUBLIC_IP}"
+if [[ ! -s "${CERT_DIR}/fullchain.pem" || ! -s "${CERT_DIR}/privkey.pem" ]] || ! openssl x509 -checkend 86400 -noout -in "${CERT_DIR}/fullchain.pem" >/dev/null 2>&1; then
+  certbot certonly --non-interactive --agree-tos --register-unsafely-without-email \
+    --preferred-profile shortlived --webroot --webroot-path "$(readlink -f "${CURRENT_DIR}")" \
+    --ip-address "${PUBLIC_IP}" --cert-name "${PUBLIC_IP}" --keep-until-expiring
+fi
+
+RUNTIME_DIR="$(mktemp -d /run/bladesbeats-release-desk.XXXXXX)"
+case "$(readlink -f "${RUNTIME_DIR}")" in /run/bladesbeats-release-desk.*) ;; *) echo "Unsafe runtime directory." >&2; exit 1;; esac
+chown "${DESK_USER}:${DESK_USER}" "${RUNTIME_DIR}"
+chmod 0700 "${RUNTIME_DIR}"
+TOKEN="$(openssl rand -base64 24 | tr '+/' '-_' | tr -d '=\n')"
+install -o "${DESK_USER}" -g "${DESK_USER}" -m 0600 /dev/null "${RUNTIME_DIR}/token"
+printf '%s' "${TOKEN}" > "${RUNTIME_DIR}/token"
+install -o "${DESK_USER}" -g "${DESK_USER}" -m 0600 "${CERT_DIR}/fullchain.pem" "${RUNTIME_DIR}/fullchain.pem"
+install -o "${DESK_USER}" -g "${DESK_USER}" -m 0600 "${CERT_DIR}/privkey.pem" "${RUNTIME_DIR}/privkey.pem"
+
+FIREWALL=""
+CHILD_PID=""
+cleanup() {
+  trap - EXIT INT TERM HUP
+  if [[ -n "${CHILD_PID}" ]] && kill -0 "${CHILD_PID}" 2>/dev/null; then kill "${CHILD_PID}" 2>/dev/null || true; wait "${CHILD_PID}" 2>/dev/null || true; fi
+  if [[ "${FIREWALL}" == "ufw" ]]; then ufw --force delete allow "${PORT}/tcp" >/dev/null 2>&1 || true; fi
+  if [[ "${FIREWALL}" == "iptables" ]]; then iptables -D INPUT -p tcp --dport "${PORT}" -m conntrack --ctstate NEW -j ACCEPT >/dev/null 2>&1 || true; fi
+  case "$(readlink -f "${RUNTIME_DIR}" 2>/dev/null || true)" in /run/bladesbeats-release-desk.*) rm -rf -- "${RUNTIME_DIR}";; esac
+  echo "Release Desk stopped. Temporary port ${PORT} is closed."
+}
+trap cleanup EXIT INT TERM HUP
+
+if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+  ufw allow "${PORT}/tcp" comment "Temporary BladesBeats Release Desk" >/dev/null
+  FIREWALL="ufw"
+elif command -v iptables >/dev/null 2>&1; then
+  iptables -I INPUT -p tcp --dport "${PORT}" -m conntrack --ctstate NEW -j ACCEPT
+  FIREWALL="iptables"
+else
+  echo "No supported host firewall was found; refusing to expose the temporary panel." >&2
+  exit 1
+fi
+
+echo
+echo "Temporary Release Desk"
+URL_HOST="${PUBLIC_IP}"
+if [[ "${PUBLIC_IP}" == *:* ]]; then URL_HOST="[${PUBLIC_IP}]"; fi
+echo "URL:      https://${URL_HOST}:${PORT}/"
+echo "Password: ${TOKEN}"
+echo "Expires:  10 minutes to log in · 20 minutes idle · 2 hours maximum"
+echo
+echo "Press Ctrl+C to close the panel and firewall port immediately."
+
+runuser -u "${DESK_USER}" -- env \
+  BLADESBEATS_SOURCE="${SOURCE_DIR}" \
+  BLADESBEATS_CURRENT_DIR="${CURRENT_DIR}" \
+  BLADESBEATS_RELEASES_DIR="${RELEASES_DIR}" \
+  RELEASE_DESK_DATA_DIR="${DATA_DIR}" \
+  RELEASE_DESK_HOST="0.0.0.0" \
+  RELEASE_DESK_PORT="${PORT}" \
+  RELEASE_DESK_TOKEN_FILE="${RUNTIME_DIR}/token" \
+  RELEASE_DESK_CERT="${RUNTIME_DIR}/fullchain.pem" \
+  RELEASE_DESK_KEY="${RUNTIME_DIR}/privkey.pem" \
+  BLADESBEATS_PUBLISH_COMMAND="/usr/bin/sudo" \
+  BLADESBEATS_PUBLISH_PREFIX="/usr/local/sbin/bladesbeats-publish" \
+  "${NODE_BIN}" "${SOURCE_DIR}/release-desk/server.js" &
+CHILD_PID=$!
+wait "${CHILD_PID}"
