@@ -31,6 +31,8 @@ sudo env BLADESBEATS_NGINX_CONFIG=/etc/nginx/sites-available/bladesbeats.com \
 
 If the active virtual-host file has a different name, replace `/etc/nginx/sites-available/bladesbeats.com` with its exact path. The helper accepts only files inside `/etc/nginx/sites-available/` or `/etc/nginx/conf.d/`. Check that the reviewed configuration still has the right Let's Encrypt certificate paths before the first cutover. The helper keeps timestamped Nginx backups and older public releases for manual recovery. A Cloudflare-facing verification failure after the local origin succeeds exits with code 2 and leaves the healthy release live; inspect CDN cache or rules in that case.
 
+The contact-form Worker is a separate Cloudflare deployment. After merging Worker changes, publish `workers/contact-worker.js` from an authenticated Wrangler environment with `npm run contact:deploy`; the VPS helper does not change Cloudflare Workers.
+
 ## Optional Release Desk workflow
 
 The separate Release Desk workflow provides a temporary HTTPS review panel and uses `/srv/bladesbeats/current`. It has its own build output and prerequisite legal details. Do not point the direct deployment helper at its release directory.
